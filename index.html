@@ -1,0 +1,2621 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#FFFBF5">
+<title>Spelling Sprites</title>
+
+<!-- ==========================================================================
+     SPELLING SPRITES
+     A research-backed spelling practice app in one self-contained HTML file.
+
+     Four parts, each behind a banner comment:
+       1. STYLE   - all CSS, custom properties in :root
+       2. MARKUP  - static shells; most screens are rendered by JS
+       3. MODULES - LEX (word analysis), ART (sprite drawing), SPEAK, SFX, OCR
+       4. APP     - store, scheduler, session engine, views
+
+     Method notes are in the README and in Grown-ups > How this works.
+     ========================================================================== -->
+
+<style>
+/* ============================ 1. STYLE ================================== */
+:root{
+  --bg:#FFFBF5;
+  --card:#FFFFFF;
+  --ink:#241F38;          /* 13.9:1 on --bg */
+  --muted:#5F5878;        /* 6.1:1 on --bg - do not lighten past 4.5:1 */
+  --line:#E9E1F2;
+  --violet:#6C3FE0;
+  --violet-soft:#F1EAFF;
+  --teal:#00937A;
+  --teal-soft:#E0F5F0;
+  --coral:#D93A5B;
+  --coral-soft:#FFECEF;
+  --gold:#B87400;
+  --gold-soft:#FFF3D6;
+  --shadow:0 2px 0 rgba(36,31,56,.06), 0 8px 24px rgba(36,31,56,.07);
+  --r:18px;
+  --tap:52px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%;
+  overscroll-behavior-y:contain;
+}
+body.big{font-size:18px}
+#app{max-width:560px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+
+/* --- top bar --- */
+#topbar{
+  position:sticky;top:0;z-index:30;background:var(--bg);
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;
+  display:flex;align-items:center;gap:10px;
+}
+#topbar h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.2px;flex:1}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;background:var(--card);
+  border:1px solid var(--line);border-radius:999px;padding:5px 11px;
+  font-size:13px;font-weight:700;white-space:nowrap;
+}
+.pill b{font-weight:800}
+
+/* --- layout --- */
+main{flex:1;padding:0 16px 24px}
+.view{display:none;animation:fade .18s ease}
+.view.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin:0 0 14px}
+.card.flat{box-shadow:none}
+h2{font-size:20px;margin:22px 0 12px;letter-spacing:-.3px}
+h3{font-size:15px;margin:0 0 8px;letter-spacing:-.1px}
+p{margin:0 0 10px}
+.muted{color:var(--muted);font-size:14px}
+.tiny{font-size:12.5px;color:var(--muted);line-height:1.45}
+.row{display:flex;gap:10px;align-items:center}
+.row.wrap{flex-wrap:wrap}
+.spread{justify-content:space-between}
+.grow{flex:1;min-width:0}
+.center{text-align:center}
+.hide{display:none !important}
+
+/* --- buttons --- */
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:var(--tap);padding:0 20px;border-radius:14px;
+  background:var(--violet);color:#fff;font-weight:800;font-size:16px;
+  box-shadow:0 3px 0 #4A24AE;transition:transform .06s,box-shadow .06s;
+}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 #4A24AE}
+.btn.wide{width:100%}
+.btn.big{min-height:64px;font-size:19px;border-radius:18px}
+.btn.ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
+.btn.ghost:active{transform:translateY(1px);background:#F7F3FD}
+.btn.go{background:var(--teal);box-shadow:0 3px 0 #006B58}
+.btn.go:active{box-shadow:0 1px 0 #006B58}
+.btn.warn{background:var(--coral);box-shadow:0 3px 0 #A32441}
+.btn.warn:active{box-shadow:0 1px 0 #A32441}
+.btn.sm{min-height:40px;padding:0 14px;font-size:14px;border-radius:11px;box-shadow:none}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.iconbtn{width:44px;height:44px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;border:1.5px solid var(--line);background:var(--card)}
+
+/* --- inputs --- */
+input[type=text],input[type=date],input[type=number],textarea,select{
+  width:100%;font:inherit;color:var(--ink);background:var(--card);
+  border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;min-height:var(--tap);
+}
+textarea{min-height:150px;resize:vertical;line-height:1.6}
+input:focus,textarea:focus,select:focus{outline:2.5px solid var(--violet);outline-offset:1px;border-color:transparent}
+label.fld{display:block;margin:0 0 12px}
+label.fld > span{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:0 0 5px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.switch:last-child{border-bottom:0}
+.switch input{width:auto;min-height:0;accent-color:var(--violet);transform:scale(1.4);margin-right:4px}
+
+/* --- tab bar --- */
+#tabs{
+  position:sticky;bottom:0;z-index:30;display:flex;background:rgba(255,251,245,.94);
+  backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding:6px 6px calc(env(safe-area-inset-bottom) + 6px);
+}
+#tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-radius:12px;color:var(--muted);font-size:11px;font-weight:700}
+#tabs button .ic{font-size:21px;line-height:1}
+#tabs button.on{color:var(--violet);background:var(--violet-soft)}
+body.playing #tabs{display:none}
+
+/* --- word display --- */
+.word{
+  font-weight:800;letter-spacing:.09em;text-align:center;line-height:1.25;
+  word-break:break-word;font-variant-ligatures:none;
+}
+.word.xl{font-size:clamp(34px,10.5vw,52px)}
+.word.lg{font-size:clamp(26px,7.5vw,36px)}
+.word .ok{color:var(--ink)}
+.word .bad{color:var(--coral);text-decoration:line-through;text-decoration-thickness:2.5px}
+.word .miss{color:var(--coral);opacity:.8}
+.word .fix{color:var(--gold);background:var(--gold-soft);border-radius:5px;padding:0 2px}
+.word .blank{color:var(--violet);opacity:.35}
+
+.chips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+.chip{
+  background:var(--violet-soft);color:var(--violet);border-radius:10px;
+  padding:7px 13px;font-weight:800;letter-spacing:.05em;font-size:17px;
+}
+.chip.sm{font-size:13px;padding:5px 10px;letter-spacing:0}
+.tag{display:inline-block;background:var(--teal-soft);color:var(--teal);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:800;margin:0 5px 5px 0}
+
+/* --- answer box --- */
+.answer{
+  width:100%;text-align:center;font-size:clamp(26px,7.5vw,34px);font-weight:800;
+  letter-spacing:.08em;padding:16px 12px;border:2.5px dashed var(--line);border-radius:16px;
+  background:#FDFCFF;min-height:74px;
+}
+.answer:focus{border-style:solid;border-color:var(--violet);outline:none;background:#fff}
+
+/* --- progress --- */
+.bar{height:9px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--violet);border-radius:99px;transition:width .3s}
+.bar.teal > i{background:var(--teal)}
+.dots{display:flex;gap:3px}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots i.f{background:var(--teal)}
+
+/* --- feedback banners --- */
+.verdict{border-radius:16px;padding:14px;text-align:center;font-weight:800;margin:0 0 14px}
+.verdict.yes{background:var(--teal-soft);color:var(--teal)}
+.verdict.no{background:var(--gold-soft);color:var(--gold)}
+.pop{animation:pop .34s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pop{0%{transform:scale(.86)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+
+/* --- sprite gallery --- */
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.sprite{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:9px 6px 8px;text-align:center;box-shadow:var(--shadow)}
+.sprite svg{width:100%;height:auto;display:block}
+.sprite .nm{font-size:11.5px;font-weight:800;margin-top:3px}
+.sprite.locked{opacity:.32;filter:grayscale(1)}
+.sprite.locked .nm{color:var(--muted)}
+
+/* --- word rows --- */
+.wrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.wrow:last-child{border-bottom:0}
+.wrow .wt{font-weight:700;letter-spacing:.02em}
+.badge{font-size:11px;font-weight:800;border-radius:7px;padding:3px 8px;white-space:nowrap}
+.badge.new{background:var(--violet-soft);color:var(--violet)}
+.badge.learn{background:var(--gold-soft);color:var(--gold)}
+.badge.mast{background:var(--teal-soft);color:var(--teal)}
+.badge.hard{background:var(--coral-soft);color:var(--coral)}
+
+/* --- segmented control --- */
+.seg{display:flex;background:var(--violet-soft);border-radius:13px;padding:4px;gap:4px;margin:0 0 14px}
+.seg button{flex:1;min-height:42px;border-radius:10px;font-weight:800;font-size:14px;color:var(--violet)}
+.seg button.on{background:var(--card);box-shadow:var(--shadow);color:var(--ink)}
+
+/* --- misc --- */
+.empty{text-align:center;padding:34px 16px;color:var(--muted)}
+.empty .ic{font-size:44px;display:block;margin-bottom:10px}
+.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.kv:last-child{border-bottom:0}
+.kv b{font-weight:800}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+.stats .s{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 6px}
+.stats .s b{display:block;font-size:23px;font-weight:800;line-height:1.15}
+.stats .s span{font-size:11.5px;color:var(--muted);font-weight:700}
+.note{background:var(--violet-soft);border-radius:13px;padding:12px 14px;font-size:13.5px;line-height:1.5}
+.ref{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 9px}
+
+/* --- print --- */
+#print{display:none}
+@media print{
+  body{background:#fff}
+  #app,#tabs{display:none !important}
+  #print{display:block;padding:0;font-size:13pt;color:#000}
+  #print h1{font-size:19pt;margin:0 0 2pt}
+  #print .sub{font-size:10.5pt;color:#444;margin:0 0 18pt}
+  #print ol{line-height:2.7;padding-left:26pt}
+  #print li{border-bottom:1px solid #bbb;max-width:340pt}
+  #print .dict{page-break-before:always}
+  #print .dict li{border:0;line-height:1.7}
+}
+</style>
+
+<!-- ============================ 2. MARKUP ================================= -->
+<div id="app">
+  <header id="topbar">
+    <h1 id="title">Spelling Sprites</h1>
+    <span class="pill" id="p-streak" title="Days in a row">🔥 <b>0</b></span>
+    <span class="pill" id="p-gems" title="Gems toward the next egg">💎 <b>0</b></span>
+  </header>
+
+  <main>
+    <section id="v-home"    class="view on"></section>
+    <section id="v-lists"   class="view"></section>
+    <section id="v-play"    class="view"></section>
+    <section id="v-sprites" class="view"></section>
+    <section id="v-grown"   class="view"></section>
+  </main>
+
+  <nav id="tabs">
+    <button data-go="home"><span class="ic">🎯</span>Play</button>
+    <button data-go="lists"><span class="ic">📋</span>Words</button>
+    <button data-go="sprites"><span class="ic">🥚</span>Sprites</button>
+    <button data-go="grown"><span class="ic">🔒</span>Grown-ups</button>
+  </nav>
+</div>
+
+<div id="print"></div>
+
+<script>
+/* ============================ 3. MODULES ================================= */
+"use strict";
+
+/* --------------------------------------------------------------------------
+   LEX - word intelligence.
+   Splits words into sound chunks, detects orthographic patterns, and supplies
+   example sentences. The sentence matters: a spelling test is an auditory
+   task, and hearing a word in context disambiguates homophones.
+   -------------------------------------------------------------------------- */
+const LEX = (function(){
+
+  /* ~150 common grade 3-4 words. Auto-fills a sentence when a scanned word
+     matches, so a parent rarely has to type one. */
+  /* 444 common grade 2-5 spelling words: word|sentence|grade|flags,
+     where flags mark homophones (h) and compound words (c). Used to attach a
+     sentence to a scanned word and to build lists to a set of boundaries. */
+  const BANK_RAW = [
+"about|Tell me about your day.|3","above|The kite floated above the trees.|3",
+"accident|The spill was an accident.|5","across|We walked across the bridge.|3",
+"afraid|She was not afraid of the dark.|3","after|We ate lunch after the game.|3",
+"again|Can you say that again?|3","almost|I almost forgot my backpack.|3",
+"alone|The cat sat alone on the porch.|3","along|We ran along the beach.|3",
+"already|The bus already left.|4","although|Although it rained, we played.|5",
+"always|She always brushes her teeth.|3","among|The rabbit hid among the flowers.|4",
+"animal|A giraffe is a tall animal.|3","another|May I have another apple?|3",
+"answer|I know the answer to that question.|3","anyone|Anyone can join the club.|3|c",
+"anything|Is there anything in the box?|4","appear|Stars appear after sunset.|5",
+"around|We drove around the lake.|3","attention|Pay attention to the signs.|5",
+"audience|The audience clapped loudly.|5","author|The author signed my book.|5",
+"back|Put the book back on the shelf.|2","backpack|My backpack is too heavy.|3|c",
+"beautiful|The sunset was beautiful.|4","because|I was late because I overslept.|3",
+"become|Tadpoles become frogs.|4","bedroom|Her bedroom is upstairs.|3|c",
+"before|Wash your hands before dinner.|3","began|The movie began at seven.|3",
+"beginning|The beginning of the story is sad.|5","behind|My shoe was behind the door.|3",
+"believe|I believe you can do it.|3","below|The fish swam below the boat.|3",
+"beside|Sit beside me on the bench.|3","best|She tried her best on the test.|2",
+"between|The park is between two houses.|3","bicycle|She rode her bicycle to school.|4",
+"birthday|Her birthday is in July.|3|c","black|The kitten has black paws.|2",
+"blew|The wind blew my hat off.|3|h","blue|The sky is bright blue.|3|h",
+"bought|We bought bread at the store.|3","brave|He was brave at the dentist.|2",
+"break|Please do not break the glass.|4","breakfast|We eat breakfast at seven.|3|c",
+"bright|The sun is very bright today.|3","bring|Please bring me a towel.|2",
+"brother|My brother lost a tooth.|4","brought|She brought her lunch to school.|3",
+"brush|I brush my hair each morning.|2","build|They will build a treehouse.|3",
+"business|Her family runs a small business.|5","busy|Mom is busy in the kitchen.|3",
+"butterfly|A butterfly landed on my hand.|3|c","careful|Be careful on the wet steps.|4",
+"carried|He carried the box inside.|4","catch|Can you catch the ball?|2",
+"caught|He caught the ball with one hand.|3","celebrate|We celebrate with cake.|5",
+"center|Stand in the center of the circle.|4","century|A century is one hundred years.|5",
+"certain|I am certain I locked it.|4","change|Please change your wet socks.|3",
+"character|My favorite character is brave.|5","chase|The puppy likes to chase leaves.|3",
+"children|The children played outside.|3","circle|Draw a circle around the answer.|4",
+"city|The city has tall buildings.|4","classroom|Our classroom has a fish tank.|3|c",
+"clean|Your room looks very clean.|3","clock|The clock says four thirty.|2",
+"close|Please close the door quietly.|2","clothes|Put your clothes in the drawer.|3",
+"cloud|One cloud covered the sun.|2","column|Add the numbers in each column.|5",
+"coming|Grandma is coming to visit.|3","condition|The bike is in good condition.|5",
+"cook|We cook pancakes on Sunday.|3","corner|Wait for me on the corner.|3",
+"could|Could you help me lift this?|3","country|Our country has fifty states.|4",
+"courage|It took courage to speak up.|5","cousin|My cousin lives in Texas.|4",
+"crash|The blocks fell with a crash.|2","cupcake|She frosted every cupcake.|3|c",
+"dangerous|Thin ice is dangerous.|4","dark|It gets dark after dinner.|2",
+"daylight|We hiked in the daylight.|3|c","decide|You decide where we eat.|4",
+"describe|Describe what you saw.|5","desert|Cactus plants grow in the desert.|4",
+"develop|Plants develop from seeds.|5","different|These two shoes are different.|4",
+"difficult|That question was difficult.|4","dinner|Dinner is ready in ten minutes.|3",
+"direction|Which direction is north?|5","dish|I dropped a dish in the sink.|2",
+"does|Does your dog like water?|4","dream|I had a strange dream.|3",
+"dress|Her dress has yellow flowers.|2","during|We were quiet during the movie.|3",
+"early|The birds wake up early.|3","earth|The earth goes around the sun.|3",
+"easy|That puzzle was easy for her.|3","edge|Do not stand near the edge.|5",
+"eight|There are eight cookies left.|3","either|Either answer is fine.|4",
+"energy|Running takes a lot of energy.|4","enormous|The whale was enormous.|5",
+"enough|Do we have enough chairs?|3","environment|We protect the environment.|5",
+"especially|I especially like blueberries.|5","every|Every student got a pencil.|3",
+"everyone|Everyone clapped at the end.|4","everything|Everything fits in one box.|3|c",
+"example|Give me one example.|4","excited|She was excited about the trip.|4",
+"experience|That was a new experience.|5","familiar|This song sounds familiar.|5",
+"family|My family eats dinner together.|3","fast|That train is very fast.|2",
+"favorite|Blue is my favorite color.|4","field|The horses ran in the field.|3",
+"finally|We finally reached the top.|4","find|Help me find my other shoe.|2",
+"finished|I finished my homework.|4","fireplace|We sat by the fireplace.|3|c",
+"first|She was first in line.|2","fish|The fish swam under the rock.|2",
+"flag|The flag waved in the wind.|2","follow|Follow me to the library.|3",
+"football|They play football on Fridays.|3|c","forest|Deer live in the forest.|4",
+"forward|Take one step forward.|4","found|I found my missing sock.|3",
+"fresh|We picked fresh berries.|2","friend|My friend saved me a seat.|3",
+"funny|That joke was really funny.|3","furniture|We moved the furniture outside.|5",
+"garden|Tomatoes grow in our garden.|3","gentle|Be gentle with the kitten.|4",
+"glad|I am glad you came.|2","grandmother|My grandmother tells good stories.|3|c",
+"grass|The grass is wet with dew.|2","green|Her bike is bright green.|2",
+"group|Our group finished the project.|3","grow|Sunflowers grow very tall.|2",
+"guarantee|I guarantee you will laugh.|5","guess|Can you guess my number?|3",
+"half|I ate half of the sandwich.|3","hand|Raise your hand to answer.|2",
+"happened|What happened to your bike?|4","happy|The puppy looks happy.|2",
+"hard|This puzzle is hard.|2","hear|Did you hear that noise?|3|h",
+"heard|We heard thunder last night.|3","height|Measure the height of the door.|5",
+"help|Can you help me carry this?|2","here|Come and sit here.|3|h",
+"himself|He made breakfast by himself.|4","history|We study history on Tuesdays.|4",
+"hole|There is a hole in my sock.|3|h","homework|Finish your homework first.|3|c",
+"honest|Be honest about what happened.|5","hospital|The nurse works at the hospital.|4",
+"hour|We waited for an hour.|4","house|Their house has a red door.|3",
+"however|It rained; however, we still played.|4","hundred|A hundred ants marched by.|3",
+"idea|That is a great idea.|4","imagination|Her imagination is amazing.|5",
+"imagine|Imagine a world without cars.|4","important|Sleep is important for your brain.|4",
+"inside|The puppy stayed inside today.|3","instead|Have water instead of soda.|4",
+"island|We sailed to a small island.|4","it's|It's raining again.|3|h",
+"its|The bird built its nest.|3|h","journey|The journey took two days.|4",
+"jump|Watch me jump over the puddle.|2","keep|You can keep the extra one.|2",
+"kind|She was kind to the new girl.|2","kitchen|The kitchen smells like cookies.|3",
+"knew|I knew the answer right away.|3","knife|Use a knife to cut the apple.|3",
+"knock|Please knock before you enter.|3","know|Do you know her name?|3|h",
+"knowledge|Reading builds knowledge.|5","language|Spanish is a beautiful language.|4",
+"last|This is the last cookie.|2","laugh|That story made me laugh.|3",
+"laughter|Laughter filled the room.|5","learn|I want to learn to swim.|3",
+"leave|We leave for camp on Monday.|3","left|Turn left at the corner.|2",
+"length|Measure the length of the rope.|5","library|We borrowed books from the library.|4",
+"light|Please turn on the light.|2","listen|Please listen to the directions.|3",
+"little|A little bird landed nearby.|2","long|That is a long story.|2",
+"lose|Do not lose your key.|3","lunch|We ate lunch on the grass.|2",
+"machine|The machine makes a loud noise.|4","made|I made a card for Dad.|2",
+"magic|The trick looked like magic.|4","mail|The mail comes at noon.|3|h",
+"male|A male deer has antlers.|3|h","maybe|Maybe we will go tomorrow.|3",
+"measure|Measure the flour carefully.|4","medicine|Take the medicine with water.|5",
+"mile|We walked one whole mile.|2","milk|Pour the milk into the glass.|2",
+"minute|Wait one more minute.|4","mistake|Everyone makes a mistake sometimes.|4",
+"money|She saved her money in a jar.|3","month|October is my favorite month.|3",
+"morning|We run every morning.|3","mother|My mother packs my lunch.|3",
+"mountain|Snow covered the mountain top.|3","move|Help me move this chair.|3",
+"must|You must wear your helmet.|2","name|Write your name at the top.|2",
+"necessary|A coat is necessary today.|5","neighbor|Our neighbor has three cats.|4",
+"never|I never eat mushrooms.|3","newspaper|Dad reads the newspaper daily.|3|c",
+"next|We go next week.|2","nice|That was a nice thing to say.|2","night|Owls hunt at night.|3",
+"no|There is no milk left.|3|h","nothing|There was nothing in the jar.|3",
+"notice|Did you notice the new sign?|4","number|Pick a number under ten.|3",
+"occasion|This is a special occasion.|5","ocean|Whales live in the ocean.|3",
+"often|We often walk to school.|3","once|I have been there once.|3",
+"one|Only one cookie is left.|3|h","open|Please open the window.|2",
+"opposite|Hot is the opposite of cold.|5","orange|She peeled a juicy orange.|4",
+"other|Try the other door.|3","outside|We play outside after lunch.|3",
+"page|Turn to page ten.|2","paint|We will paint the fence blue.|2",
+"park|Meet me at the park.|2","part|This is my favorite part.|2",
+"particular|She is particular about her pencils.|5","patience|Fishing takes patience.|5",
+"peace|We sat in perfect peace.|3|h","people|Many people came to the fair.|3",
+"perhaps|Perhaps we will go later.|4","permission|Ask permission before you go.|5",
+"physical|Soccer is physical exercise.|5","pick|Pick a card, any card.|2",
+"picture|Hang the picture by the door.|4","piece|May I have a piece of pie?|3|h",
+"place|Save my place in line.|2","plain|The shirt is plain white.|3|h",
+"plane|The plane landed on time.|3|h","plant|Water the plant every day.|2",
+"play|They play soccer on Saturdays.|2","playground|The playground was crowded.|3|c",
+"point|Point to the tallest tree.|2","police|The police officer waved to us.|4",
+"popcorn|We made popcorn for the movie.|3|c","possible|It is possible to finish today.|5",
+"practice|Piano practice is at four.|4","prepare|Prepare for the test tonight.|5",
+"pressure|Do not put pressure on your ankle.|5","pretty|That is a pretty painting.|3",
+"probably|It will probably rain later.|4","problem|We solved the problem together.|4",
+"purpose|What is the purpose of this tool?|5","question|I have one more question.|4",
+"quick|Take a quick look.|2","quiet|The library is very quiet.|3",
+"rain|The rain stopped at noon.|2","rainbow|A rainbow appeared after the storm.|3|c",
+"read|I read two books this week.|2","ready|Are you ready to go?|3",
+"really|That was really fun.|3","reason|Give me one good reason.|3",
+"receive|Did you receive my letter?|5","recognize|I did not recognize her.|5",
+"remember|Remember to feed the fish.|4","restaurant|We ate at a new restaurant.|5",
+"rhythm|Clap along with the rhythm.|5","ride|May I ride my bike?|2",
+"right|You got the answer right.|3|h","ring|The bell will ring soon.|2",
+"river|The river runs behind our house.|3","road|The road curves to the right.|2|h",
+"rode|She rode her horse home.|3|h","room|Clean your room before dinner.|2",
+"said|She said hello to me.|3","sand|Warm sand covered my feet.|2",
+"schedule|Check the bus schedule.|5","school|Our school has a big gym.|3",
+"science|Science is my best subject.|5","sea|The sea was calm today.|3|h",
+"seat|Save me a seat, please.|2","second|He came in second place.|3",
+"see|I can see the mountains.|3|h","sentence|Write a complete sentence.|4",
+"separate|Keep the socks separate.|5","serious|She had a serious look.|5",
+"several|Several birds landed nearby.|4","shell|She found a spiral shell.|2",
+"ship|The ship sailed at dawn.|2","shop|We shop for groceries on Sunday.|2",
+"short|This rope is too short.|2","should|You should wear a coat.|3",
+"sidewalk|Chalk covered the sidewalk.|3|c","similar|These two are similar.|5",
+"since|I have been waiting since noon.|4","sing|We sing in the car.|2",
+"sister|My sister plays the drums.|3","sleep|The baby fell asleep fast.|2",
+"small|A small mouse ran past.|2","smile|Her smile lit up the room.|2",
+"snowflake|Each snowflake is different.|3|c","sock|I lost one blue sock.|2",
+"soft|The blanket feels soft.|2","something|Something smells wonderful.|3|c",
+"sometimes|Sometimes I read at night.|3","son|Their son is my age.|3|h",
+"song|That song is stuck in my head.|2","sorry|I am sorry I was late.|3",
+"special|Today is a special day.|4","spell|Can you spell your last name?|2",
+"spot|There is a spot on my shirt.|2","stand|Please stand up straight.|2",
+"star|One star shone above us.|2","started|The race started at noon.|3",
+"station|We waited at the train station.|4","stay|Stay close to me.|2",
+"step|Watch your step on the ice.|2","stick|The dog fetched a stick.|2",
+"stone|He skipped a flat stone.|2","stop|The bus will stop here.|2",
+"storm|The storm knocked out the power.|2","story|Tell me a bedtime story.|3",
+"straight|Draw a straight line.|3","straighten|Straighten the picture frame.|5",
+"strange|That was a strange sound.|3","street|Look both ways crossing the street.|2",
+"strength|Lifting builds strength.|5","strong|She is very strong.|2",
+"success|Her success took years.|5","sudden|The stop was very sudden.|5",
+"sufficient|One blanket is sufficient.|5","sugar|Add sugar to the batter.|3",
+"summer|We swim all summer.|3","sun|The sun warmed my back.|3|h",
+"sunshine|The sunshine warmed the porch.|3|c","sure|Are you sure about that?|3",
+"surprise|The party was a big surprise.|4","swim|We swim at the lake.|2",
+"tail|The dog wagged its tail.|3|h","take|Take an umbrella with you.|2",
+"tale|Grandpa told a tall tale.|3|h","talk|Let us talk about it later.|2",
+"tall|My brother is tall.|2","teacher|My teacher reads to us every day.|3",
+"teeth|Brush your teeth before bed.|2","thank|I want to thank you.|2",
+"their|Their dog ran to the fence.|3|h","there|Put the box over there.|3|h",
+"these|These apples are ripe.|3","they're|They're going to the game.|3|h",
+"thing|What is that thing called?|2","think|I think it will snow.|2",
+"thorough|Give the room a thorough cleaning.|5","though|We went, though it was cold.|4",
+"thought|I thought you were asleep.|3","thousand|A thousand stars filled the sky.|4",
+"three|We have three cats.|2","threw|He threw the ball to me.|3|h",
+"through|The train went through a tunnel.|3|h","time|What time is the game?|2",
+"to|We walked to the store.|3|h","today|Today is a warm day.|3",
+"together|We finished the puzzle together.|3","tomorrow|Tomorrow is a school day.|3",
+"tonight|We will read tonight.|3","too|I want to come too.|3|h",
+"tree|A robin nested in the tree.|2","trouble|The kitten got into trouble.|3",
+"truck|The truck carried hay.|2","truly|I am truly sorry.|5","two|She has two brothers.|3|h",
+"under|The ball rolled under the couch.|3","until|Wait until the light turns green.|3",
+"unusual|That is an unusual bird.|5","usually|I usually eat toast.|4",
+"vacation|We went camping on vacation.|4","valuable|This ring is valuable.|5",
+"various|We saw various animals.|5","vegetable|A carrot is my favorite vegetable.|4",
+"village|A small village sat in the valley.|4","visit|We visit Grandma on Sundays.|4",
+"voice|Her voice is very soft.|4","wait|Please wait for me.|2",
+"walk|We walk to school together.|2","walked|We walked to the park.|3",
+"wall|Hang the picture on the wall.|2","want|Do you want more juice?|2",
+"warm|The soup is still warm.|2","wash|Wash your hands, please.|2",
+"watch|Watch out for the puddle.|2","water|Please pour me some water.|3",
+"wear|Wear your boots in the snow.|3|h","weather|The weather is warm today.|3|h",
+"week|We leave in one week.|2","weekend|We camp every weekend.|3|c",
+"weight|Check the weight of the box.|5","were|They were early today.|3",
+"where|Where did you put my hat?|3|h","whether|I wonder whether it will snow.|3|h",
+"which|Which shirt do you want?|3","while|Read while I cook.|3",
+"whole|She ate the whole orange.|3|h","wind|The wind blew my hat off.|2",
+"winter|We sled all winter.|3","wish|Make a wish and blow.|2",
+"without|I left without my umbrella.|3|c","women|Three women joined the team.|4",
+"won|Our team won the game.|3|h","wood|We stacked the wood outside.|3|h",
+"work|We work together on this.|2","world|The world is full of wonders.|3",
+"would|Would you like some tea?|3|h","write|Write your name at the top.|3|h",
+"wrote|He wrote a letter to Grandma.|3","yard|The dog ran across the yard.|2",
+"year|Next year I will be ten.|3","you're|You're next in line.|3|h",
+"young|The young bird learned to fly.|3","your|Is this your jacket?|3|h",];
+
+  /* extra -tion/-sion and silent-letter words, so both can anchor a whole list */
+  BANK_RAW.push(
+    "nation|Our nation votes in November.|4","action|The movie was full of action.|4",
+  "section|Read the next section aloud.|4","motion|The boat rocked in a slow motion.|4",
+  "fraction|One half is a fraction.|4","invention|The wheel was a great invention.|5",
+  "celebration|The party was a celebration.|4","education|Reading is part of your education.|5",
+  "decision|That was a smart decision.|5","division|We learned division today.|4",
+  "discussion|We had a long discussion.|5","expression|Her expression was surprised.|5",
+  "information|The sign gave useful information.|5","solution|We found a simple solution.|5",
+  "knee|I scraped my knee on the path.|3","knight|The knight wore heavy armor.|4",
+  "wrap|Wrap the gift in blue paper.|3","wrist|She wore a bracelet on her wrist.|4",
+  "wrong|I took the wrong bus.|3","thumb|He hurt his thumb on the door.|3",
+  "climb|We climb the hill every fall.|3","comb|Use a comb on your hair.|3",
+  "lamb|The lamb followed its mother.|3","numb|My fingers went numb in the cold.|4",
+  "crumb|Not one crumb was left.|3","sign|Read the sign by the gate.|3",
+  "knot|I tied a knot in the rope.|3","wreck|The storm left a wreck of branches.|4",
+  );
+
+  const BANK = new Map();
+  BANK_RAW.forEach(function(row){
+    const p = row.split("|");
+    BANK.set(p[0].toLowerCase(), {w:p[0], s:p[1], g:+p[2], f:p[3] || ""});
+  });
+
+  /* Homophones only teach anything in sets, so they are generated in sets. */
+  const HOMOPHONES = [
+    ["their","there","they're"], ["your","you're"], ["its","it's"], ["to","too","two"],
+    ["hear","here"], ["write","right"], ["know","no"], ["one","won"], ["sea","see"],
+    ["blue","blew"], ["weather","whether"], ["piece","peace"], ["through","threw"],
+    ["wear","where"], ["hole","whole"], ["mail","male"], ["plain","plane"],
+    ["road","rode"], ["son","sun"], ["tail","tale"], ["would","wood"]
+  ];
+
+  /* Words that show up on a printed spelling handout but are not the words. */
+  const NOISE = new Set(("name date week spelling list words word unit lesson practice test "+
+    "homework due grade class school teacher review study monday tuesday wednesday thursday "+
+    "friday saturday sunday challenge bonus sight core extra new").split(" "));
+
+  /* Words shaped like magic e where the e is doing something else. */
+  const NOT_MAGIC_E = new Set(("above become before courage favorite furniture here imagine lose "+
+    "machine measure medicine minute move notice opposite picture police practice prepare "+
+    "pressure purpose schedule separate sure there village were where have give live come "+
+    "some done none love glove dove gone one whose house mouse please cause chocolate "+
+    "climate delicate definite private engine promise service office active native examine "+
+    "determine genuine figure capture creature adventure temperature treasure pleasure "+
+    "feature mixture culture lecture signature purchase surface").split(" "));
+
+  const VOWELS = "aeiouy";
+  const DIGRAPHS = new Set(["ch","sh","th","wh","ph","ck","ng","gh","qu"]);
+  const SUFFIXES = ["tion","sion","ment","ness","able","ible","ing","est","ful","less","ly","ed","er","es"];
+
+  function isV(c){ return VOWELS.indexOf(c) >= 0; }
+
+  /* Sound chunks for writing a long word in pieces.
+     English cannot be syllabified reliably without a pronunciation dictionary,
+     so this is a decoding aid, not a syllabification lesson: split on affixes,
+     then on VCCV, then on VCV, and keep a silent final e attached to the chunk
+     it belongs to. Anything it is not confident about comes back whole. */
+  function chunks(raw){
+    const w = String(raw).toLowerCase().replace(/[^a-z']/g, "");
+    if(w.indexOf("'") >= 0) return [raw];        /* contractions stay whole */
+    if(w.length < 5) return [raw];
+
+    let stem = w, tail = "";
+    for(const suf of SUFFIXES){
+      if(w.length - suf.length >= 3 && w.slice(-suf.length) === suf){
+        stem = w.slice(0, -suf.length); tail = suf; break;
+      }
+    }
+
+    const cuts = [];
+    const last = function(){ return cuts.length ? cuts[cuts.length-1] : 0; };
+    const okCut = function(c){ return c - last() >= 2 && stem.length - c >= 2; };
+    let i = 1;
+    while(i < stem.length - 1){
+      if(isV(stem[i-1]) && !isV(stem[i])){
+        if(!isV(stem[i+1]) && isV(stem[i+2])){           /* VCCV: hap|pen */
+          const pair = stem[i] + stem[i+1];
+          const c = DIGRAPHS.has(pair) ? i : i + 1;      /* keep ch/th/sh whole */
+          if(okCut(c)){ cuts.push(c); i = c + 1; continue; }
+        }else if(isV(stem[i+1])){                        /* VCV: to|mor */
+          if(okCut(i)){ cuts.push(i); i = i + 1; continue; }
+        }
+      }
+      i++;
+    }
+
+    let parts = [];
+    let prev = 0;
+    cuts.forEach(function(c){ parts.push(stem.slice(prev, c)); prev = c; });
+    parts.push(stem.slice(prev));
+    if(tail) parts.push(tail);
+    parts = parts.filter(function(p){ return p.length; });
+
+    /* rememb|er -> remem|ber : -er and -est are their own syllable, so they
+       pull one consonant off a cluster in front of them. Digraphs stay whole,
+       which keeps toge|th|er as to-geth-er rather than to-get-her. */
+    if((tail === "er" || tail === "est") && parts.length >= 2){
+      const k = parts.length - 2, pre = parts[k];
+      if(/[bcdfghjklmnpqrstvwxz]{2}$/.test(pre) && pre.length > 2 && !DIGRAPHS.has(pre.slice(-2))){
+        parts[k+1] = pre.slice(-1) + parts[k+1];
+        parts[k] = pre.slice(0, -1);
+      }
+    }
+
+    /* a chunk with no vowel is not a chunk, and a word-final silent e belongs
+       to the chunk before it (be|cau|se -> be|cause) */
+    const merged = [];
+    parts.forEach(function(p, i){
+      const vowelless = !/[aeiouy]/.test(p);
+      const silentE = i === parts.length - 1 && /^[bcdfghjklmnpqrstvwxz]{1,2}e$/.test(p);
+      if((vowelless || silentE) && merged.length) merged[merged.length-1] += p;
+      else merged.push(p);
+    });
+    if(merged.length < 2 || merged.length > 5) return [raw];
+
+    const out = []; let idx = 0;
+    merged.forEach(function(m){ out.push(raw.substr(idx, m.length)); idx += m.length; });
+    if(idx < raw.length) out[out.length-1] += raw.slice(idx);
+    return out;
+  }
+
+  /* Orthographic patterns. Each carries a child-facing explanation, because a
+     rule that transfers beats fifteen memorised shapes (Words Their Way). */
+  const PATTERNS = [
+    {id:"silent-e", label:"Silent e",
+     test:function(w){
+       /* CVCe alone over-claims: sure, measure, machine, have and give all fit
+          the shape without the e doing a magic-e job. Telling her the e makes
+          the vowel say its name would simply be wrong for those. */
+       if(/ure$/.test(w) || NOT_MAGIC_E.has(w)) return false;
+       return /[bcdfghjklmnpqrstvwxz][aeiou][bcdfghjklmnpqrstvwxz]e$/.test(w);
+     },
+     tip:"The e at the end is silent. It makes the vowel before it say its own name."},
+    {id:"kn-wr-mb", label:"Sneaky silent letter",
+     test:function(w){ return /^kn|^wr|^gn|mb$|^ps/.test(w); },
+     tip:"There is a letter here you cannot hear. It is silent, but it still has to be written."},
+    {id:"ough", label:"ough / augh",
+     test:function(w){ return /ough|augh/.test(w); },
+     tip:"The letters o-u-g-h stick together as a team. This one just has to be pictured and practised."},
+    {id:"tion", label:"-tion / -sion",
+     test:function(w){ return /(tion|sion)$/.test(w); },
+     tip:"The 'shun' sound at the end of a word is almost always spelled t-i-o-n."},
+    {id:"double", label:"Double letters",
+     test:function(w){ return /(bb|dd|ff|gg|ll|mm|nn|pp|rr|ss|tt|zz|cc)/.test(w); },
+     tip:"Two of the same letter in a row. You only hear one sound, but you write it twice."},
+    {id:"r-vowel", label:"Bossy r",
+     /* A trailing -er is an unstressed ending, not a bossy-r vowel: teacher and
+        water do not belong in a list next to star, first and turn. */
+     test:function(w){ return /(ar|er|ir|or|ur)/.test(w.replace(/er$/, "")); },
+     tip:"The r changes the vowel next to it. Bossy r never lets the vowel say its own name."},
+    {id:"vowel-team", label:"Vowel team",
+     test:function(w){ return /(ai|ay|ea|ee|ie|oa|oe|ue|ui|ei|oo|au|aw|ou|ow|oi|oy)/.test(w); },
+     tip:"Two vowels working together to make one sound. The first one usually does the talking."},
+    {id:"soft-c-g", label:"Soft c or g",
+     test:function(w){ return /[cg][eiy]/.test(w); },
+     tip:"When c or g is followed by e, i or y it goes soft: c sounds like s, g sounds like j."},
+    {id:"ph", label:"ph says /f/",
+     test:function(w){ return /ph/.test(w); },
+     tip:"p and h together say f. It comes from Greek words."},
+    {id:"ed-ing", label:"Added ending",
+     test:function(w){ return /(ing|ed)$/.test(w) && w.length > 5; },
+     tip:"Find the base word first, then add the ending. Ask: did a letter double, or did an e drop off?"},
+    {id:"plural-es", label:"Plural -es",
+     test:function(w){ return /(ches|shes|ses|xes|zes)$/.test(w); },
+     tip:"When a word already hisses at the end, add e-s so you can say the extra sound."},
+    {id:"y-end", label:"y on the end",
+     test:function(w){ return /[bcdfghjklmnpqrstvwxz]y$/.test(w); },
+     tip:"y is doing a vowel's job here. At the end of a longer word it usually says 'ee'."},
+    {id:"contraction", label:"Contraction",
+     test:function(w){ return /'/.test(w); },
+     tip:"Two words squeezed into one. The apostrophe stands exactly where the missing letters were."},
+    {id:"three-syl", label:"Long word",
+     test:function(w){ return chunks(w).length >= 3; },
+     tip:"Break it into chunks and spell one chunk at a time. Long words are just short words in a row."}
+  ];
+
+  function patterns(raw){
+    const w = String(raw).toLowerCase();
+    return PATTERNS.filter(function(p){ return p.test(w); });
+  }
+  function mainPattern(raw){
+    const p = patterns(raw);
+    return p.length ? p[0] : null;
+  }
+  function sentenceFor(raw){
+    const e = BANK.get(String(raw).toLowerCase());
+    return e ? e.s : "";
+  }
+
+  /* Turn whatever came off a photo, a paste or a keyboard into clean words. */
+  function parse(text){
+    const seen = new Set(), out = [];
+    String(text || "").split(/[\n\r,;\t•·|]+/).forEach(function(line){
+      line.split(/\s{2,}/).forEach(function(part){
+        let t = part.trim()
+          .replace(/^[\s\-–—*.)\]\d]+/, "")   /* list numbering / bullets */
+          .replace(/[.,;:!?"'’”)\]]+$/, "")
+          .replace(/^["'‘“(\[]+/, "")
+          .trim();
+        if(!t) return;
+        if(!/^[A-Za-z][A-Za-z'\-]*$/.test(t)) return;   /* no digits, no junk */
+        if(t.length < 2 || t.length > 20) return;
+        if(NOISE.has(t.toLowerCase())) return;
+        const k = t.toLowerCase();
+        if(seen.has(k)) return;
+        seen.add(k); out.push(t);
+      });
+    });
+    return out;
+  }
+
+  function shuf(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+
+  /* Which patterns have enough words in the bank to build a whole list from. */
+  function focusOptions(){
+    const counts = {};
+    BANK.forEach(function(e){
+      patterns(e.w).forEach(function(p){ counts[p.id] = (counts[p.id] || 0) + 1; });
+    });
+    const out = [{id:"", label:"A mix of everything"}];
+    PATTERNS.forEach(function(p){
+      if(counts[p.id] >= 10) out.push({id:p.id, label:p.label, n:counts[p.id]});
+    });
+    out.push({id:"__hom", label:"Homophones (there / their / they're)"});
+    out.push({id:"__cmp", label:"Compound words"});
+    return out;
+  }
+
+  /* Build a list to a set of boundaries: how many words, which grade level,
+     which spelling rule, and never a word she already has. */
+  function generate(opts){
+    opts = opts || {};
+    const count = Math.max(1, Math.min(30, opts.count || 12));
+    const focus = opts.focus || "";
+    const skip = new Set((opts.exclude || []).map(function(x){ return String(x).toLowerCase(); }));
+
+    if(focus === "__hom"){
+      const sets = shuf(HOMOPHONES.filter(function(set){
+        return set.every(function(w){ return !skip.has(w) && BANK.has(w); });
+      }));
+      const out = [];
+      for(const set of sets){
+        if(out.length + set.length > count && out.length) break;
+        set.forEach(function(w){ out.push(BANK.get(w)); });
+        if(out.length >= count) break;
+      }
+      return out.slice(0, count);
+    }
+
+    const wanted = opts.grades && opts.grades.length ? opts.grades : [2,3,4,5];
+    const match = function(e, grades){
+      if(skip.has(e.w.toLowerCase())) return false;
+      if(grades.indexOf(e.g) < 0) return false;
+      if(focus === "__cmp") return e.f.indexOf("c") >= 0;
+      if(focus) return patterns(e.w).some(function(p){ return p.id === focus; });
+      return true;
+    };
+
+    let pool = [];
+    BANK.forEach(function(e){ if(match(e, wanted)) pool.push(e); });
+
+    /* If the boundaries are too tight to fill the list, widen the grade band by
+       one step at a time rather than silently returning a short list. */
+    let widen = wanted.slice();
+    while(pool.length < count && widen.length < 4){
+      const lo = Math.min.apply(null, widen), hi = Math.max.apply(null, widen);
+      if(lo > 2) widen.push(lo - 1);
+      else if(hi < 5) widen.push(hi + 1);
+      else break;
+      pool = [];
+      BANK.forEach(function(e){ if(match(e, widen)) pool.push(e); });
+    }
+    return shuf(pool).slice(0, count);
+  }
+
+  return {chunks:chunks, patterns:patterns, mainPattern:mainPattern,
+          sentenceFor:sentenceFor, parse:parse, PATTERNS:PATTERNS,
+          generate:generate, focusOptions:focusOptions, bankSize:BANK.size};
+})();
+
+
+/* --------------------------------------------------------------------------
+   ART - sprite drawing.
+   Every creature is generated from the parameter table below by one renderer,
+   the same approach the workout apps use for exercise figures: stroke weight,
+   proportion and palette stay consistent for free, and 24 creatures cost a few
+   hundred bytes instead of 24 image files.
+   -------------------------------------------------------------------------- */
+const ART = (function(){
+
+  /* b=body  t=topper  p=pattern  e=eyes  c=[body, dark, light] */
+  const SPRITES = [
+   {n:"Pip",     b:"round",t:"antenna",p:"belly", e:"two",   c:["#8B5CF6","#5B21B6","#EDE4FF"], tip:"Say the word slowly. Every sound you hear needs a letter."},
+   {n:"Moss",    b:"egg",  t:"leaf",   p:"spots", e:"big",   c:["#34A853","#15803D","#E3F7E8"], tip:"Silent e at the end makes the vowel say its own name."},
+   {n:"Blip",    b:"tall", t:"antenna",p:"none",  e:"three", c:["#0EA5E9","#0369A1","#E0F2FE"], tip:"Two vowels together usually make one sound."},
+   {n:"Tuff",    b:"wide", t:"ears",   p:"belly", e:"two",   c:["#F59E0B","#B45309","#FEF3D6"], tip:"Bossy r never lets the vowel say its own name."},
+   {n:"Nim",     b:"round",t:"curls",  p:"spots", e:"sleepy",c:["#EC4899","#9D174D","#FCE7F3"], tip:"Break a long word into chunks. Spell one chunk at a time."},
+   {n:"Zog",     b:"star", t:"horn",   p:"none",  e:"big",   c:["#EF4444","#991B1B","#FEE2E2"], tip:"The 'shun' sound at the end is almost always t-i-o-n."},
+   {n:"Willow",  b:"tall", t:"leaf",   p:"belly", e:"two",   c:["#14B8A6","#0F766E","#D5F5F1"], tip:"When c or g meets e, i or y, it goes soft."},
+   {n:"Bump",    b:"wide", t:"none",   p:"spots", e:"two",   c:["#A16207","#713F12","#FEF6E0"], tip:"Double letters: you hear one sound but write two letters."},
+   {n:"Sift",    b:"egg",  t:"fin",    p:"none",  e:"wink",  c:["#6366F1","#3730A3","#E4E7FF"], tip:"Find the base word first, then add the ending."},
+   {n:"Quill",   b:"tall", t:"crown",  p:"belly", e:"big",   c:["#D946EF","#86198F","#FAE8FF"], tip:"q is never alone. It always brings u with it."},
+   {n:"Cobble",  b:"round",t:"ears",   p:"spots", e:"two",   c:["#78716C","#44403C","#F1EFEE"], tip:"ck comes right after a short vowel, at the end of a word."},
+   {n:"Fizz",    b:"star", t:"flame",  p:"none",  e:"three", c:["#F97316","#9A3412","#FFEDD5"], tip:"When a word hisses at the end, add e-s to make it plural."},
+   {n:"Puddle",  b:"wide", t:"none",   p:"belly", e:"sleepy",c:["#3B82F6","#1D4ED8","#DDEAFE"], tip:"An apostrophe stands exactly where the missing letters were."},
+   {n:"Thorn",   b:"tall", t:"horn",   p:"spots", e:"two",   c:["#7C2D12","#431407","#F5E6DE"], tip:"kn, wr and mb hide a silent letter. Write it anyway."},
+   {n:"Lumen",   b:"round",t:"flame",  p:"none",  e:"big",   c:["#EAB308","#854D0E","#FEF9C3"], tip:"y at the end of a long word usually says 'ee'."},
+   {n:"Drift",   b:"egg",  t:"antenna",p:"belly", e:"wink",  c:["#06B6D4","#155E75","#CFFAFE"], tip:"Write it, check it, fix it. Fixing is where the learning happens."},
+   {n:"Bramble", b:"star", t:"curls",  p:"spots", e:"two",   c:["#65A30D","#365314","#ECFCCB"], tip:"ph says f. Those words usually come from Greek."},
+   {n:"Sable",   b:"tall", t:"ears",   p:"none",  e:"sleepy",c:["#4B5563","#1F2937","#EEF0F3"], tip:"Picture the word with your eyes closed before you write it."},
+   {n:"Marigold",b:"round",t:"crown",  p:"belly", e:"big",   c:["#FB923C","#C2410C","#FFEDD5"], tip:"ough is a team of four letters. Learn it as one shape."},
+   {n:"Kelp",    b:"wide", t:"fin",    p:"spots", e:"two",   c:["#0D9488","#134E4A","#D5F5F1"], tip:"Read the sentence. It tells you which their, there or they're you need."},
+   {n:"Nova",    b:"star", t:"antenna",p:"none",  e:"three", c:["#8B5CF6","#4C1D95","#EDE4FF"], tip:"Spell it out loud, then write it. Two senses beat one."},
+   {n:"Hazel",   b:"egg",  t:"leaf",   p:"spots", e:"wink",  c:["#B45309","#78350F","#FEF3D6"], tip:"i before e, except after c. But 'weird' is weird, and so are a few others."},
+   {n:"Echo",    b:"round",t:"curls",  p:"belly", e:"sleepy",c:["#DB2777","#831843","#FCE7F3"], tip:"Come back to a word tomorrow, not just today. Spacing makes it stick."},
+   {n:"Aurora",  b:"tall", t:"crown",  p:"spots", e:"big",   c:["#7C3AED","#4C1D95","#F3E8FF"], tip:"You have spelled every word in the app. Pick a new list and keep going."}
+  ];
+
+  /* --- geometry helpers --- */
+  function smooth(pts){
+    const n = pts.length;
+    let d = "M " + pts[0][0].toFixed(1) + " " + pts[0][1].toFixed(1);
+    for(let i = 0; i < n; i++){
+      const p0 = pts[(i-1+n)%n], p1 = pts[i], p2 = pts[(i+1)%n], p3 = pts[(i+2)%n];
+      const c1 = [p1[0] + (p2[0]-p0[0])/6, p1[1] + (p2[1]-p0[1])/6];
+      const c2 = [p2[0] - (p3[0]-p1[0])/6, p2[1] - (p3[1]-p1[1])/6];
+      d += " C " + c1[0].toFixed(1) + " " + c1[1].toFixed(1) + ", " +
+                   c2[0].toFixed(1) + " " + c2[1].toFixed(1) + ", " +
+                   p2[0].toFixed(1) + " " + p2[1].toFixed(1);
+    }
+    return d + " Z";
+  }
+  function blob(cx, cy, rx, ry, bumps, amp){
+    const pts = [], N = bumps * 2;
+    for(let i = 0; i < N; i++){
+      const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+      const k = 1 + (i % 2 ? -amp : amp);
+      pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+    }
+    return smooth(pts);
+  }
+
+  const BODY = {
+    round:{rx:30, ry:28, bumps:6, amp:.03},
+    egg:  {rx:26, ry:32, bumps:5, amp:.02},
+    tall: {rx:22, ry:34, bumps:6, amp:.04},
+    wide: {rx:34, ry:23, bumps:7, amp:.05},
+    star: {rx:28, ry:28, bumps:8, amp:.11}
+  };
+
+  function topper(kind, cx, top, c){
+    const dark = c[1], body = c[0];
+    switch(kind){
+      case "antenna":
+        return '<path d="M'+cx+' '+top+' q -2 -12 -8 -16" stroke="'+dark+'" stroke-width="3" fill="none" stroke-linecap="round"/>'+
+               '<circle cx="'+(cx-9)+'" cy="'+(top-17)+'" r="5" fill="'+dark+'"/>';
+      case "ears":
+        return '<path d="M'+(cx-16)+' '+(top+6)+' q -6 -20 8 -16 z" fill="'+dark+'"/>'+
+               '<path d="M'+(cx+16)+' '+(top+6)+' q 6 -20 -8 -16 z" fill="'+dark+'"/>';
+      case "horn":
+        return '<path d="M'+(cx-7)+' '+(top+2)+' L'+cx+' '+(top-17)+' L'+(cx+7)+' '+(top+2)+' z" fill="'+dark+'"/>';
+      case "leaf":
+        return '<path d="M'+cx+' '+top+' q -3 -9 -3 -13" stroke="'+dark+'" stroke-width="3" fill="none" stroke-linecap="round"/>'+
+               '<ellipse cx="'+(cx+6)+'" cy="'+(top-14)+'" rx="10" ry="6" fill="'+dark+'" transform="rotate(-22 '+(cx+6)+' '+(top-14)+')"/>';
+      case "flame":
+        return '<path d="M'+cx+' '+(top-20)+' q 11 10 6 17 q -6 8 -12 0 q -5 -8 6 -17 z" fill="'+dark+'"/>';
+      case "curls":
+        return '<circle cx="'+(cx-11)+'" cy="'+(top-3)+'" r="7" fill="'+dark+'"/>'+
+               '<circle cx="'+cx+'" cy="'+(top-9)+'" r="8" fill="'+dark+'"/>'+
+               '<circle cx="'+(cx+11)+'" cy="'+(top-3)+'" r="7" fill="'+dark+'"/>';
+      case "crown":
+        return '<path d="M'+(cx-14)+' '+(top+1)+' L'+(cx-14)+' '+(top-13)+' L'+(cx-6)+' '+(top-5)+
+               ' L'+cx+' '+(top-16)+' L'+(cx+6)+' '+(top-5)+' L'+(cx+14)+' '+(top-13)+' L'+(cx+14)+' '+(top+1)+' z" fill="'+dark+'"/>';
+      case "fin":
+        return '<path d="M'+cx+' '+(top-19)+' q 13 9 10 20 q -12 -4 -19 -8 q 3 -8 9 -12 z" fill="'+dark+'"/>';
+      default: return "";
+    }
+  }
+
+  function eyes(kind, cx, cy, dark){
+    const w = "#FFFFFF";
+    function eye(x, r){
+      return '<circle cx="'+x+'" cy="'+cy+'" r="'+r+'" fill="'+w+'"/>'+
+             '<circle cx="'+x+'" cy="'+(cy+1)+'" r="'+(r*.52).toFixed(1)+'" fill="#241F38"/>'+
+             '<circle cx="'+(x+r*.3).toFixed(1)+'" cy="'+(cy-r*.35).toFixed(1)+'" r="'+(r*.2).toFixed(1)+'" fill="'+w+'"/>';
+    }
+    switch(kind){
+      case "big":    return eye(cx-9, 8.5) + eye(cx+9, 8.5);
+      case "three":  return eye(cx-11, 5.5) + eye(cx, 6.5) + eye(cx+11, 5.5);
+      case "wink":   return eye(cx-8, 6.5) +
+        '<path d="M'+(cx+3)+' '+cy+' q 5 4 10 0" stroke="#241F38" stroke-width="2.6" fill="none" stroke-linecap="round"/>';
+      case "sleepy": return eye(cx-8, 6.5) + eye(cx+8, 6.5) +
+        '<path d="M'+(cx-15)+' '+(cy-3)+' q 7 -4 14 0" stroke="'+dark+'" stroke-width="2.4" fill="none" stroke-linecap="round"/>'+
+        '<path d="M'+(cx+1)+' '+(cy-3)+' q 7 -4 14 0" stroke="'+dark+'" stroke-width="2.4" fill="none" stroke-linecap="round"/>';
+      default:       return eye(cx-8, 6.5) + eye(cx+8, 6.5);
+    }
+  }
+
+  /* Draw one sprite. Index wraps, so the table can grow without breaking saves. */
+  function draw(i, opts){
+    opts = opts || {};
+    const s = SPRITES[i % SPRITES.length];
+    const B = BODY[s.b] || BODY.round;
+    const cx = 50, cy = 56;
+    const top = cy - B.ry;
+    const light = s.c[2], body = s.c[0], dark = s.c[1];
+    let g = "";
+
+    /* feet first, so the body overlaps them */
+    g += '<ellipse cx="'+(cx-13)+'" cy="'+(cy+B.ry-2)+'" rx="9" ry="6" fill="'+dark+'"/>';
+    g += '<ellipse cx="'+(cx+13)+'" cy="'+(cy+B.ry-2)+'" rx="9" ry="6" fill="'+dark+'"/>';
+    g += topper(s.t, cx, top, s.c);
+    g += '<path d="'+blob(cx, cy, B.rx, B.ry, B.bumps, B.amp)+'" fill="'+body+'"/>';
+
+    if(s.p === "belly")
+      g += '<ellipse cx="'+cx+'" cy="'+(cy+B.ry*.34)+'" rx="'+(B.rx*.56)+'" ry="'+(B.ry*.44)+'" fill="'+light+'" opacity=".8"/>';
+    if(s.p === "spots"){
+      const spot = [[-.5,-.25,4],[.46,.1,3.4],[-.22,.42,3],[.2,-.5,2.6]];
+      spot.forEach(function(p){
+        g += '<circle cx="'+(cx+B.rx*p[0]).toFixed(1)+'" cy="'+(cy+B.ry*p[1]).toFixed(1)+'" r="'+p[2]+'" fill="'+light+'" opacity=".75"/>';
+      });
+    }
+    /* cheeks + face */
+    g += '<circle cx="'+(cx-17)+'" cy="'+(cy+6)+'" r="5" fill="#FF7A9A" opacity=".28"/>';
+    g += '<circle cx="'+(cx+17)+'" cy="'+(cy+6)+'" r="5" fill="#FF7A9A" opacity=".28"/>';
+    g += eyes(s.e, cx, cy - 3, dark);
+    g += '<path d="M'+(cx-6)+' '+(cy+11)+' q 6 6 12 0" stroke="#241F38" stroke-width="2.6" fill="none" stroke-linecap="round"/>';
+
+    const cls = opts.cls ? ' class="'+opts.cls+'"' : "";
+    return '<svg viewBox="0 0 100 100"'+cls+' aria-hidden="true">'+g+'</svg>';
+  }
+
+  return {draw:draw, SPRITES:SPRITES, count:SPRITES.length};
+})();
+
+
+/* --------------------------------------------------------------------------
+   SPEAK - dictation. Uses the browser's own voice, so it works offline once
+   the page is cached. iOS needs one user gesture before it will make a sound,
+   which is what the "Turn on the voice" button on first run is for.
+   -------------------------------------------------------------------------- */
+const SPEAK = (function(){
+  const synth = window.speechSynthesis || null;
+  let voice = null, unlocked = false;
+
+  function pick(){
+    if(!synth) return;
+    const vs = synth.getVoices() || [];
+    if(!vs.length) return;
+    const en = vs.filter(function(v){ return /^en/i.test(v.lang); });
+    const pool = en.length ? en : vs;
+    const nice = ["Samantha","Karen","Moira","Serena","Allison","Ava","Google US English","Microsoft Aria"];
+    for(const n of nice){
+      const hit = pool.find(function(v){ return v.name.indexOf(n) === 0; });
+      if(hit){ voice = hit; return; }
+    }
+    voice = pool.find(function(v){ return v.localService; }) || pool[0];
+  }
+  if(synth){
+    pick();
+    synth.addEventListener && synth.addEventListener("voiceschanged", pick);
+  }
+
+  function available(){ return !!synth; }
+  function unlock(){
+    if(!synth || unlocked) return;
+    try{ const u = new SpeechSynthesisUtterance(" "); u.volume = 0; synth.speak(u); unlocked = true; }catch(e){}
+  }
+  function stop(){ if(synth) try{ synth.cancel(); }catch(e){} }
+
+  /* Speaks each phrase in turn with a pause between, then calls done(). */
+  function say(parts, opts){
+    opts = opts || {};
+    if(!synth){ if(opts.done) opts.done(); return; }
+    stop();
+    const list = (Array.isArray(parts) ? parts : [parts]).filter(Boolean);
+    let i = 0;
+    (function next(){
+      if(i >= list.length){ if(opts.done) opts.done(); return; }
+      const u = new SpeechSynthesisUtterance(String(list[i++]));
+      if(voice) u.voice = voice;
+      u.lang = (voice && voice.lang) || "en-US";
+      u.rate = opts.rate || 0.82;
+      u.pitch = 1.05;
+      u.onend = function(){ setTimeout(next, opts.gap == null ? 420 : opts.gap); };
+      u.onerror = function(){ setTimeout(next, 120); };
+      try{ synth.speak(u); }catch(e){ next(); }
+    })();
+  }
+
+  /* The standard classroom pattern: word, sentence, word again. */
+  function dictate(word, sentence, opts){
+    const parts = sentence ? [word, sentence, word] : [word, word];
+    say(parts, opts);
+  }
+  function spellOut(word, opts){
+    say([word.split("").join(", "), word], Object.assign({rate:0.7, gap:200}, opts || {}));
+  }
+  return {say:say, dictate:dictate, spellOut:spellOut, stop:stop, unlock:unlock, available:available};
+})();
+
+
+/* --------------------------------------------------------------------------
+   HEAR - speaking the weekly list in, for when there is no photo to scan.
+   Speech recognition returns the *common* spelling of what it hears, so it
+   cannot tell "their" from "there" - every spoken word goes to the review
+   screen to be checked, same as a scanned one. On a phone the system keyboard's
+   own microphone key works just as well and is offered as the fallback.
+   -------------------------------------------------------------------------- */
+const HEAR = (function(){
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, wanted = false;
+
+  function available(){ return !!R; }
+
+  function start(onWord, onState){
+    if(!R){ onState("unsupported"); return false; }
+    stop();
+    wanted = true;
+    rec = new R();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = function(e){
+      for(let i = e.resultIndex; i < e.results.length; i++){
+        if(e.results[i].isFinal) onWord(e.results[i][0].transcript);
+      }
+    };
+    rec.onerror = function(e){
+      const fatal = e.error === "not-allowed" || e.error === "service-not-allowed";
+      if(fatal){ wanted = false; onState("denied"); }
+      else if(e.error !== "no-speech") onState("error", e.error);
+    };
+    /* Safari ends the session after each pause; restart while she still wants it on. */
+    rec.onend = function(){
+      if(wanted){ try{ rec.start(); }catch(err){ wanted = false; onState("ended"); } }
+      else onState("ended");
+    };
+    try{ rec.start(); onState("listening"); }
+    catch(err){ wanted = false; onState("error", String(err)); return false; }
+    return true;
+  }
+
+  function stop(){
+    wanted = false;
+    if(rec){ try{ rec.onend = null; rec.stop(); }catch(e){} rec = null; }
+  }
+  function isOn(){ return wanted; }
+  return {available:available, start:start, stop:stop, isOn:isOn};
+})();
+
+
+/* --------------------------------------------------------------------------
+   SFX - short generated tones. No audio files, nothing to load.
+   The "not yet" sound is deliberately gentle: an error here is information,
+   not a punishment.
+   -------------------------------------------------------------------------- */
+const SFX = (function(){
+  let ctx = null;
+  function on(){ return !DB || DB.profile.sound !== false; }
+  function ac(){
+    if(!ctx){
+      const C = window.AudioContext || window.webkitAudioContext;
+      if(!C) return null;
+      ctx = new C();
+    }
+    if(ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function tone(freq, at, dur, vol, type){
+    const c = ac(); if(!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, c.currentTime + at);
+    g.gain.linearRampToValueAtTime(vol, c.currentTime + at + .02);
+    g.gain.exponentialRampToValueAtTime(.0001, c.currentTime + at + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(c.currentTime + at); o.stop(c.currentTime + at + dur + .05);
+  }
+  return {
+    good:function(){ if(!on()) return; [523.25,659.25,783.99].forEach(function(f,i){ tone(f, i*.075, .3, .16); }); },
+    soft:function(){ if(!on()) return; tone(392, 0, .22, .12, "triangle"); tone(330, .1, .26, .1, "triangle"); },
+    hatch:function(){ if(!on()) return; [659,784,988,1319].forEach(function(f,i){ tone(f, i*.09, .45, .15); }); },
+    tick:function(){ if(!on()) return; tone(880, 0, .06, .07, "square"); },
+    unlock:function(){ try{ ac(); }catch(e){} }
+  };
+})();
+
+
+/* --------------------------------------------------------------------------
+   OCR - photo to text.
+   On iPhone the reliable path is Apple Live Text: photograph the list, hold to
+   select the words, Copy, then paste here. It handles handwriting, which
+   engine-based OCR mostly does not. Tesseract is offered as a fallback for
+   clean printed handouts and is only downloaded if it is actually used.
+   -------------------------------------------------------------------------- */
+const OCR = (function(){
+  const SRC = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+  let loading = null;
+  function load(){
+    if(window.Tesseract) return Promise.resolve();
+    if(loading) return loading;
+    loading = new Promise(function(res, rej){
+      const s = document.createElement("script");
+      s.src = SRC; s.onload = res;
+      s.onerror = function(){ loading = null; rej(new Error("offline")); };
+      document.head.appendChild(s);
+    });
+    return loading;
+  }
+  /* Grayscale, stretch the contrast and upscale a little. A phone photo of a
+     printed handout reads far better after this than it does raw. */
+  function prep(file){
+    return new Promise(function(res){
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = function(){
+        URL.revokeObjectURL(url);
+        const scale = Math.min(2, Math.max(1, 1600 / (img.width || 1600)));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        const x = c.getContext("2d");
+        x.drawImage(img, 0, 0, c.width, c.height);
+        try{
+          const d = x.getImageData(0, 0, c.width, c.height), px = d.data;
+          let min = 255, max = 0;
+          const g = new Uint8ClampedArray(px.length / 4);
+          for(let i = 0, j = 0; i < px.length; i += 4, j++){
+            const v = (px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114) | 0;
+            g[j] = v; if(v < min) min = v; if(v > max) max = v;
+          }
+          const range = Math.max(1, max - min);
+          for(let i = 0, j = 0; i < px.length; i += 4, j++){
+            const v = ((g[j] - min) / range) * 255;
+            const o = v < 128 ? v * 0.55 : Math.min(255, 128 + (v - 128) * 1.7);
+            px[i] = px[i+1] = px[i+2] = o;
+          }
+          x.putImageData(d, 0, 0);
+        }catch(e){ /* tainted canvas or no memory: read the plain photo instead */ }
+        c.toBlob(function(b){ res(b || file); }, "image/png");
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); res(file); };
+      img.src = url;
+    });
+  }
+
+  function read(file, onProgress){
+    return load().then(function(){ return prep(file); }).then(function(clean){
+      return window.Tesseract.recognize(clean, "eng", {
+        logger:function(m){
+          if(m.status === "recognizing text" && onProgress) onProgress(Math.round(m.progress * 100));
+        }
+      });
+    }).then(function(r){ return (r && r.data && r.data.text) || ""; });
+  }
+  return {read:read};
+})();
+
+
+/* ============================== 4. APP ================================== */
+
+/* --- store ---------------------------------------------------------------- */
+const KEY = "spell.db";
+const INTERVALS = [0, 1, 2, 4, 7, 14];   /* Leitner box -> days until due */
+const MASTER_BOX = 5;
+
+function blank(){
+  return {
+    v:1,
+    profile:{name:"Emily", sessionSize:8, newPerSession:3, rate:0.82, sound:true, big:false,
+             hints:true, focusList:true, reviewOld:false},
+    lists:[], words:[], log:[], activeListId:"",
+    gems:0, sprites:0, streak:0, lastPlayed:"", best:0
+  };
+}
+let DB = blank();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){
+      const d = JSON.parse(raw);
+      DB = Object.assign(blank(), d);
+      DB.profile = Object.assign(blank().profile, d.profile || {});
+    }
+  }catch(e){ DB = blank(); }
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} }
+
+/* --- dates ---------------------------------------------------------------- */
+function pad(n){ return n < 10 ? "0" + n : "" + n; }
+function today(){ const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+function addDays(iso, n){
+  const p = iso.split("-").map(Number);
+  const d = new Date(p[0], p[1]-1, p[2]);
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
+}
+function daysBetween(a, b){
+  const pa = a.split("-").map(Number), pb = b.split("-").map(Number);
+  return Math.round((new Date(pb[0],pb[1]-1,pb[2]) - new Date(pa[0],pa[1]-1,pa[2])) / 86400000);
+}
+
+/* --- small helpers -------------------------------------------------------- */
+function uid(){ return Math.random().toString(36).slice(2, 9); }
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function el(id){ return document.getElementById(id); }
+function shuffle(a){ for(let i = a.length - 1; i > 0; i--){ const j = (Math.random()*(i+1))|0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function words(){ return DB.words; }
+function wordById(id){ return DB.words.find(function(w){ return w.id === id; }); }
+function listById(id){ return DB.lists.find(function(l){ return l.id === id; }); }
+function plural(n, s, p){ return n + " " + (n === 1 ? s : (p || s + "s")); }
+
+/* --- word state ----------------------------------------------------------- */
+function newWord(text, sentence, listId){
+  return {
+    id:uid(), listId:listId, text:text.trim(),
+    sentence:(sentence || LEX.sentenceFor(text) || "").trim(),
+    box:0, due:today(), seen:0, right:0, wrong:0, days:[],
+    created:today(), lastSeen:"", g3:false, g5:false, misses:[]
+  };
+}
+function isMastered(w){ return w.box >= MASTER_BOX; }
+
+/* A word with a test on Friday is no use to her if the scheduler parks it for
+   fourteen days. Never let a review land after the test it is for. */
+function capToTest(w, t){
+  const l = listById(w.listId);
+  if(!l || !l.testDate || l.testDate < t) return;
+  if(w.due > l.testDate) w.due = l.testDate;
+}
+/* Days until this word's test, or 99 if it has none. */
+function testIn(w){
+  const l = listById(w.listId);
+  if(!l || !l.testDate) return 99;
+  const d = daysBetween(today(), l.testDate);
+  return d < 0 ? 99 : d;
+}
+/* The soonest upcoming test, with how ready she is for it. */
+function nextTest(){
+  const t = today();
+  let best = null;
+  DB.lists.forEach(function(l){
+    if(!l.testDate || l.testDate < t) return;
+    if(!best || l.testDate < best.testDate) best = l;
+  });
+  if(!best) return null;
+  const ws = words().filter(function(w){ return w.listId === best.id; });
+  return {list:best, days:daysBetween(t, best.testDate), total:ws.length,
+          shaky:ws.filter(function(w){ return w.box < 3; }).length};
+}
+function statusOf(w){
+  if(w.seen === 0) return {k:"new", t:"New"};
+  if(isMastered(w)) return {k:"mast", t:"Mastered"};
+  if(w.wrong >= 3 && w.wrong > w.right) return {k:"hard", t:"Tricky"};
+  return {k:"learn", t:"Learning"};
+}
+function dueWords(){
+  const t = today();
+  return practicePool().filter(function(w){ return w.seen > 0 && w.due <= t; });
+}
+function freshWords(){ return practicePool().filter(function(w){ return w.seen === 0; }); }
+
+/* The words practice is allowed to draw from.
+   Her teacher hands out a list every week and that list IS the assignment, so
+   by default practice uses exactly those words and nothing else. Turning
+   "review older lists" on in Grown-ups widens it, at the cost of spending part
+   of each session on words that are not on this week's test. */
+function activeList(){
+  return listById(DB.activeListId) || DB.lists[DB.lists.length - 1] || null;
+}
+function practicePool(){
+  if(DB.profile.focusList === false || DB.profile.reviewOld) return words();
+  const l = activeList();
+  if(!l) return words();
+  const only = words().filter(function(w){ return w.listId === l.id; });
+  return only.length ? only : words();
+}
+
+/* --- gems and hatching ---------------------------------------------------- */
+const GEMS_PER_EGG = 5;
+function addGems(n){
+  DB.gems += n;
+  const earned = Math.min(ART.count, Math.floor(DB.gems / GEMS_PER_EGG));
+  const hatched = earned > DB.sprites;
+  DB.sprites = earned;
+  return hatched;
+}
+function eggProgress(){ return DB.gems % GEMS_PER_EGG; }
+
+/* --- streak --------------------------------------------------------------- */
+function touchStreak(){
+  const t = today();
+  if(DB.lastPlayed === t) return;
+  if(DB.lastPlayed && daysBetween(DB.lastPlayed, t) === 1) DB.streak++;
+  else DB.streak = 1;
+  DB.lastPlayed = t;
+}
+
+/* --- letter alignment ----------------------------------------------------- */
+/* Levenshtein with backtrace, so the compare screen can show exactly which
+   letters went wrong. Self-correction at the letter level is the active
+   ingredient in the corrected-test method. */
+function align(attempt, target){
+  const a = attempt, b = target, m = a.length, n = b.length;
+  const d = [];
+  for(let i = 0; i <= m; i++){ d.push(new Array(n + 1).fill(0)); d[i][0] = i; }
+  for(let j = 0; j <= n; j++) d[0][j] = j;
+  const same = function(i, j){ return a[i-1].toLowerCase() === b[j-1].toLowerCase(); };
+  for(let i = 1; i <= m; i++)
+    for(let j = 1; j <= n; j++)
+      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (same(i,j) ? 0 : 1));
+
+  const ops = [];
+  let i = m, j = n;
+  while(i > 0 || j > 0){
+    if(i > 0 && j > 0 && d[i][j] === d[i-1][j-1] + (same(i,j) ? 0 : 1)){
+      ops.push({t:same(i,j) ? "eq" : "sub", a:a[i-1], b:b[j-1]}); i--; j--;
+    }else if(i > 0 && d[i][j] === d[i-1][j] + 1){
+      ops.push({t:"extra", a:a[i-1]}); i--;
+    }else{
+      ops.push({t:"missing", b:b[j-1]}); j--;
+    }
+  }
+  return ops.reverse();
+}
+function renderAttempt(ops){
+  return ops.map(function(o){
+    if(o.t === "eq")      return '<span class="ok">' + esc(o.a) + "</span>";
+    if(o.t === "sub")     return '<span class="bad">' + esc(o.a) + "</span>";
+    if(o.t === "extra")   return '<span class="bad">' + esc(o.a) + "</span>";
+    return '<span class="miss">_</span>';
+  }).join("");
+}
+function renderTarget(ops){
+  return ops.map(function(o){
+    if(o.t === "eq")   return '<span class="ok">' + esc(o.b) + "</span>";
+    if(o.t === "extra") return "";
+    return '<span class="fix">' + esc(o.b) + "</span>";
+  }).join("");
+}
+function sameWord(a, b){
+  return String(a).trim().toLowerCase().replace(/’/g, "'") ===
+         String(b).trim().toLowerCase().replace(/’/g, "'");
+}
+
+/* --- letter blanking for the fading-hint stage ---------------------------- */
+function blanked(word, keepRatio){
+  const chars = word.split("");
+  const idx = [];
+  chars.forEach(function(c, i){ if(/[a-z']/i.test(c)) idx.push(i); });
+  const hide = Math.max(1, Math.round(idx.length * (1 - keepRatio)));
+  const pickFrom = shuffle(idx.slice());
+  const hidden = new Set(pickFrom.slice(0, hide));
+  return chars.map(function(c, i){
+    return hidden.has(i) ? '<span class="blank">•</span>' : '<span class="ok">' + esc(c) + "</span>";
+  }).join("");
+}
+
+/* --- navigation ----------------------------------------------------------- */
+let view = "home";
+const RENDER = {};
+function go(v){
+  view = v;
+  document.querySelectorAll(".view").forEach(function(s){ s.classList.remove("on"); });
+  el("v-" + v).classList.add("on");
+  document.querySelectorAll("#tabs button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.go === v);
+  });
+  window.scrollTo(0, 0);
+  if(RENDER[v]) RENDER[v]();
+}
+document.querySelectorAll("#tabs button").forEach(function(b){
+  b.addEventListener("click", function(){ SFX.unlock(); SPEAK.unlock(); go(b.dataset.go); });
+});
+
+function chrome(){
+  const n = DB.profile.name;
+  el("title").textContent = n ? n + "'s Sprites" : "Spelling Sprites";
+  el("p-streak").innerHTML = "🔥 <b>" + DB.streak + "</b>";
+  el("p-gems").innerHTML = "💎 <b>" + eggProgress() + "/" + GEMS_PER_EGG + "</b>";
+  document.body.classList.toggle("big", !!DB.profile.big);
+}
+
+/* ==========================================================================
+   HOME
+   ========================================================================== */
+RENDER.home = function(){
+  const v = el("v-home");
+  const due = dueWords().length, fresh = freshWords().length, total = words().length;
+  const mastered = words().filter(isMastered).length;
+  const name = DB.profile.name;
+
+  if(total === 0){
+    v.innerHTML =
+      '<div class="card center">' +
+        '<div style="width:120px;margin:6px auto 2px">' + ART.draw(0) + "</div>" +
+        "<h2 style='margin:4px 0 6px'>Hi" + (name ? " " + esc(name) : "") + "!</h2>" +
+        '<p class="muted">Add this week\'s spelling words and Pip will start hatching sprites with you.</p>' +
+        '<button class="btn wide big" data-act="addlist">Add my spelling words</button>' +
+      "</div>" +
+      (SPEAK.available() ? "" : '<div class="note">This browser has no built-in voice, so words will be shown instead of read aloud. Safari or Chrome will read them.</div>');
+    return;
+  }
+
+  const ready = due + Math.min(fresh, DB.profile.newPerSession);
+  const al = (DB.profile.focusList !== false && !DB.profile.reviewOld) ? activeList() : null;
+  const nt = nextTest();
+  let banner = "";
+  if(nt){
+    const when = nt.days === 0 ? "today" : nt.days === 1 ? "tomorrow" :
+                 "in " + nt.days + " days";
+    const solid = nt.total - nt.shaky;
+    banner =
+      '<div class="card" style="background:' + (nt.days <= 1 ? "var(--gold-soft)" : "var(--teal-soft)") + ';border-color:transparent">' +
+        '<div class="row spread" style="margin-bottom:8px">' +
+          "<b>" + esc(nt.list.title) + " test " + when + "</b>" +
+          '<span class="tiny">' + solid + " / " + nt.total + " solid</span>" +
+        "</div>" +
+        '<div class="bar teal"><i style="width:' + (nt.total ? solid/nt.total*100 : 0) + '%"></i></div>' +
+        (nt.shaky ? '<p class="tiny" style="margin:9px 0 0">' + plural(nt.shaky, "word") +
+                    " still shaky. Practice puts those first until the test.</p>" : "") +
+      "</div>";
+  }
+  v.innerHTML = banner +
+    '<div class="card">' +
+      '<div class="row spread" style="align-items:flex-start">' +
+        "<div class='grow'>" +
+          "<h2 style='margin:0 0 4px'>" + (name ? "Ready, " + esc(name) + "?" : "Ready to practise?") + "</h2>" +
+          '<p class="muted" style="margin:0">' +
+            (ready ? plural(ready, "word") + " lined up for today" : "Nothing due today — a bonus round is ready") +
+          "</p>" +
+          (al ? '<p class="tiny" style="margin:5px 0 0">from <b>' + esc(al.title) + "</b>" +
+                (DB.lists.length > 1 ? ' \u00b7 <button data-act="switch" style="text-decoration:underline">change</button>' : "") +
+                "</p>" : "") +
+        "</div>" +
+        "<div style='width:74px;flex:none'>" + ART.draw(Math.max(0, DB.sprites - 1)) + "</div>" +
+      "</div>" +
+      '<button class="btn wide big" data-act="play" style="margin-top:14px">▶︎ Start practice</button>' +
+    "</div>" +
+
+    '<div class="card">' +
+      '<div class="row spread" style="margin-bottom:8px">' +
+        "<h3 style='margin:0'>Next egg</h3>" +
+        '<span class="tiny">' + eggProgress() + " / " + GEMS_PER_EGG + " gems</span>" +
+      "</div>" +
+      '<div class="bar teal"><i style="width:' + (eggProgress() / GEMS_PER_EGG * 100) + '%"></i></div>' +
+      '<p class="tiny" style="margin:9px 0 0">Gems come from words you actually remember — 1 when a word gets solid, 2 more when you master it.</p>' +
+    "</div>" +
+
+    '<div class="stats">' +
+      '<div class="s"><b>' + total + "</b><span>words</span></div>" +
+      '<div class="s"><b>' + mastered + "</b><span>mastered</span></div>" +
+      '<div class="s"><b>' + DB.streak + "</b><span>day streak</span></div>" +
+    "</div>" +
+
+    "<h2>More games</h2>" +
+    '<div class="card flat" style="padding:10px">' +
+      '<button class="btn ghost wide" data-act="sprint" style="justify-content:flex-start;margin-bottom:8px">⚡️ Speed Sprint <span class="tiny" style="font-weight:600">— beat the clock on words you know</span></button>' +
+      '<button class="btn ghost wide" data-act="sort" style="justify-content:flex-start">🧩 Pattern Sort <span class="tiny" style="font-weight:600">— group words by their spelling rule</span></button>' +
+    "</div>";
+};
+
+/* ==========================================================================
+   LISTS
+   ========================================================================== */
+let openList = null;
+
+RENDER.lists = function(){
+  const v = el("v-lists");
+  if(draft){ renderAdd(); return; }
+  if(openList){ renderOneList(v); return; }
+
+  let h = '<div class="row spread" style="margin:6px 0 12px">' +
+            "<h2 style='margin:0'>Word lists</h2>" +
+            '<button class="btn sm" data-act="addlist">+ Add</button>' +
+          "</div>";
+
+  if(!DB.lists.length){
+    h += '<div class="empty"><span class="ic">📋</span>No lists yet.<br><span class="tiny">Photograph this week\'s list, paste it, or type it in.</span></div>';
+  }else{
+    DB.lists.slice().reverse().forEach(function(l){
+      const ws = words().filter(function(w){ return w.listId === l.id; });
+      const m = ws.filter(isMastered).length;
+      const isActive = activeList() && activeList().id === l.id;
+      h += '<div class="card" data-open="' + l.id + '">' +
+             '<div class="row spread"><h3 style="margin:0">' + esc(l.title) +
+             (isActive ? ' <span class="badge mast">practising</span>' : "") + "</h3>" +
+             '<span class="tiny">' + m + " / " + ws.length + " mastered</span></div>" +
+             '<div class="bar" style="margin-top:9px"><i style="width:' + (ws.length ? m/ws.length*100 : 0) + '%"></i></div>' +
+           "</div>";
+    });
+  }
+  v.innerHTML = h;
+};
+
+function renderOneList(v){
+  const l = listById(openList);
+  if(!l){ openList = null; return RENDER.lists(); }
+  const ws = words().filter(function(w){ return w.listId === l.id; });
+
+  const unseen = ws.filter(function(w){ return w.seen === 0; }).length;
+  const sessions = Math.ceil(unseen / Math.max(1, DB.profile.newPerSession));
+  let h = '<div class="row" style="margin:6px 0 12px">' +
+            '<button class="iconbtn" data-act="backlist">‹</button>' +
+            "<h2 style='margin:0;flex:1'>" + esc(l.title) + "</h2>" +
+          "</div>";
+
+  if(l.testDate || unseen){
+    const d = l.testDate ? daysBetween(today(), l.testDate) : null;
+    h += '<div class="note" style="margin-bottom:12px">' +
+      (l.testDate && d >= 0 ? "<b>Test in " + plural(d, "day") + ".</b> " : "") +
+      (unseen ? "At " + DB.profile.newPerSession + " new words a session, this list takes " +
+                plural(sessions, "session") + " to introduce" +
+                (l.testDate && d >= 0 && sessions > d + 1 ?
+                  " — more than the days left. Raise <i>new words per session</i> in Grown-ups, or she will meet some of these for the first time on test day." :
+                  ".") : "All of these have been introduced.") +
+      "</div>";
+  }
+  h += '<div class="card flat" style="padding:10px 14px">';
+
+  if(!ws.length){
+    h += '<p class="muted" style="margin:8px 0">No words in this list.</p>';
+  }else{
+    ws.forEach(function(w){
+      const st = statusOf(w);
+      h += '<div class="wrow">' +
+             '<div class="grow"><div class="wt">' + esc(w.text) + "</div>" +
+             (w.sentence ? '<div class="tiny">' + esc(w.sentence) + "</div>" : '<div class="tiny" style="opacity:.7">no sentence yet</div>') +
+             "</div>" +
+             '<span class="badge ' + st.k + '">' + st.t + "</span>" +
+             '<button class="iconbtn" data-say="' + w.id + '" aria-label="Hear it">🔊</button>' +
+           "</div>";
+    });
+  }
+  const isActive = activeList() && activeList().id === l.id;
+  h += "</div>" +
+       (isActive
+         ? '<p class="tiny center" style="margin:0 0 10px">Practice is using this list.</p>'
+         : '<button class="btn wide" data-act="setactive" style="margin-bottom:10px">Practise this list</button>') +
+       '<button class="btn ghost wide" data-act="addto" style="margin-bottom:10px">+ Add more words</button>' +
+       '<button class="btn ghost wide" data-act="dellist">Delete this list</button>';
+  v.innerHTML = h;
+}
+
+/* --- add words flow ------------------------------------------------------- */
+let draft = null;   /* {title, listId, mode, words:[{text,sentence}]} */
+
+function startAdd(listId){
+  draft = {title:suggestTitle(), listId:listId || null, mode:"photo", words:[], busy:false, msg:"", heard:[],
+           testDate:listId ? ((listById(listId) || {}).testDate || "") : nextFriday(),
+           gen:{count:12, grade:"", focus:""}};
+  go("lists");
+  renderAdd();
+}
+function suggestTitle(){
+  const d = new Date();
+  return "Week of " + d.toLocaleDateString(undefined, {month:"short", day:"numeric"});
+}
+/* School lists are usually tested on a Friday, so that is the default. */
+function nextFriday(){
+  const d = new Date();
+  d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7));
+  return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
+}
+
+function renderAdd(){
+  const v = el("v-lists");
+  const d = draft;
+
+  if(d.words.length){ return renderReview(v); }
+
+  const tabs = [["photo","Photo"], ["paste","Paste"], ["speak","Speak"], ["type","Type"], ["build","Build"]];
+  let h = '<div class="row" style="margin:6px 0 12px">' +
+            '<button class="iconbtn" data-act="canceladd">‹</button>' +
+            "<h2 style='margin:0;flex:1'>" + (d.listId ? "Add words" : "New list") + "</h2>" +
+          "</div>";
+
+  if(!d.listId){
+    h += '<label class="fld"><span>List name</span>' +
+         '<input type="text" id="f-title" value="' + esc(d.title) + '"></label>' +
+         '<label class="fld"><span>Test day (optional)</span>' +
+         '<input type="date" id="f-test" value="' + esc(d.testDate) + '">' +
+         '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Set this and nothing gets scheduled past the test — the words she is shakiest on come first as the day approaches.</span></label>';
+  }
+
+  h += '<div class="seg">' + tabs.map(function(t){
+        return '<button data-mode="' + t[0] + '" class="' + (d.mode === t[0] ? "on" : "") + '">' + t[1] + "</button>";
+       }).join("") + "</div>";
+
+  if(d.mode === "paste"){
+    h += '<div class="note" style="margin-bottom:12px">' +
+           "<b>From a photo, on iPhone:</b><br>" +
+           "1. Take a photo of the spelling list.<br>" +
+           "2. Open it in Photos and tap the <b>text-select</b> button (bottom right).<br>" +
+           "3. Drag over the words → <b>Copy</b>.<br>" +
+           "4. Come back here, hold in the box below → <b>Paste</b>.<br>" +
+           '<span class="tiny">Live Text reads handwriting far better than any in-app scanner, which is why this is the recommended route.</span>' +
+         "</div>" +
+         '<textarea id="f-text" placeholder="Paste the words here — one per line, or separated by commas."></textarea>' +
+         '<button class="btn wide" data-act="parse" style="margin-top:12px">Next</button>';
+  }
+
+  if(d.mode === "photo"){
+    h += '<div class="card flat">' +
+           '<p class="muted" style="margin-top:0">Photograph this week\'s list and the app reads it here on the device. Whatever it finds, you get to check and correct it on the next screen before anything is saved.</p>' +
+           '<input type="file" id="f-file" accept="image/*" capture="environment" style="display:none">' +
+           '<button class="btn wide big" data-act="pickphoto">📷 Take or choose a photo</button>' +
+           (d.busy ? '<div class="bar" style="margin-top:14px"><i id="ocr-bar" style="width:0%"></i></div>' +
+                     '<p class="tiny center" style="margin:8px 0 0">Reading the photo…</p>' : "") +
+           (d.msg ? '<p class="tiny" style="margin:12px 0 0">' + esc(d.msg) + "</p>" : "") +
+         "</div>" +
+         '<p class="tiny">Best results: flat on a table, good light, the whole list in frame. Printed handouts read well. <b>Handwriting</b> often does not — for that, the <b>Paste</b> tab uses the iPhone\'s own text recognition, which is much better at it.</p>';
+  }
+
+  if(d.mode === "speak"){
+    const on = HEAR.isOn();
+    h += '<div class="card flat center">' +
+           (HEAR.available() ?
+             '<p class="muted" style="margin-top:0">Say the words one at a time, pausing between each. Tap the microphone when you are done.</p>' +
+             '<button class="btn big ' + (on ? "warn" : "go") + '" data-act="mic" style="width:100%;margin-bottom:10px">' +
+               (on ? "■ Stop listening" : "🎤 Start listening") + "</button>" +
+             (on ? '<p class="tiny" style="margin:0 0 10px">Listening…</p>' : "")
+             :
+             '<p class="muted" style="margin-top:0">This browser cannot listen directly.</p>' +
+             '<div class="note" style="text-align:left">Use the <b>Type</b> tab instead and tap the <b>microphone key</b> on the iPhone keyboard — that is the same dictation, and it works here.</div>') +
+           (d.msg ? '<p class="tiny" style="margin:4px 0 10px">' + esc(d.msg) + "</p>" : "") +
+           (d.heard.length ?
+             '<div class="chips" style="margin:10px 0">' + d.heard.map(function(w, i){
+               return '<span class="chip sm" data-unheard="' + i + '">' + esc(w) + " ✕</span>";
+             }).join("") + "</div>" +
+             '<button class="btn wide" data-act="useheard">Use these ' + plural(d.heard.length, "word") + "</button>"
+             : '<p class="tiny" style="margin:6px 0 0">Nothing captured yet.</p>') +
+         "</div>" +
+         '<p class="tiny">Dictation writes the <i>common</i> spelling of what it hears, so it cannot tell <b>their</b> from <b>there</b>, or <b>to</b> from <b>too</b>. Check every word on the next screen.</p>';
+  }
+
+  if(d.mode === "type"){
+    h += '<textarea id="f-text" placeholder="One word per line:&#10;&#10;because&#10;caught&#10;friend"></textarea>' +
+         '<button class="btn wide" data-act="parse" style="margin-top:12px">Next</button>';
+  }
+
+  if(d.mode === "build"){
+    const opts = LEX.focusOptions();
+    h += '<div class="card flat">' +
+           '<p class="muted" style="margin-top:0">Pick the boundaries and the app builds a list from its bank of ' + LEX.bankSize + ' words. Words already in her lists are never picked twice.</p>' +
+           '<label class="fld"><span>How many words</span><select id="g-count">' +
+             [8,10,12,15,20].map(function(n){
+               return '<option value="' + n + '"' + (d.gen.count === n ? " selected" : "") + ">" + n + " words</option>";
+             }).join("") +
+           "</select></label>" +
+           '<label class="fld"><span>Level</span><select id="g-grade">' +
+             [["","Mixed (grades 2-5)"],["2","Grade 2 — easier"],["3","Grade 3"],
+              ["4","Grade 4"],["5","Grade 5 — a challenge"]].map(function(o){
+               return '<option value="' + o[0] + '"' + (d.gen.grade === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+             }).join("") +
+           "</select></label>" +
+           '<label class="fld"><span>Spelling rule to focus on</span><select id="g-focus">' +
+             opts.map(function(o){
+               return '<option value="' + o.id + '"' + (d.gen.focus === o.id ? " selected" : "") + ">" +
+                      esc(o.label) + (o.n ? " (" + o.n + " words)" : "") + "</option>";
+             }).join("") +
+           "</select></label>" +
+           '<button class="btn wide" data-act="build">Build the list</button>' +
+         "</div>" +
+         '<p class="tiny">A rule-focused list is the one worth choosing. Twelve words that all share a pattern teach a rule that transfers; twelve unrelated words are twelve things to memorise.</p>';
+  }
+
+  v.innerHTML = h;
+  const f = el("f-file");
+  if(f) f.addEventListener("change", onPhoto);
+}
+
+function onPhoto(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  if(el("f-title")) draft.title = el("f-title").value.trim() || draft.title;
+  draft.busy = true; draft.msg = "Reading the photo…";
+  renderAdd();
+  OCR.read(file, function(p){
+    const b = el("ocr-bar"); if(b) b.style.width = p + "%";
+  }).then(function(text){
+    const found = LEX.parse(text);
+    draft.busy = false;
+    if(!found.length){
+      draft.msg = "No clear words in that photo. Try again with more light and the list flat in frame — or use Paste, which uses the iPhone's own text recognition and handles handwriting.";
+      renderAdd();
+    }else{
+      draft.words = found.map(function(t){ return {text:t, sentence:LEX.sentenceFor(t)}; });
+      draft.msg = "";
+      renderAdd();
+    }
+  }).catch(function(){
+    draft.busy = false;
+    draft.msg = "The scanner needs an internet connection the first time. Use Paste instead — it works offline and reads handwriting.";
+    renderAdd();
+  });
+}
+
+function renderReview(v){
+  const d = draft;
+  let h = '<div class="row" style="margin:6px 0 12px">' +
+            '<button class="iconbtn" data-act="backadd">‹</button>' +
+            "<h2 style='margin:0;flex:1'>Check the words</h2>" +
+          "</div>" +
+          '<div class="note" style="margin-bottom:12px">Fix anything that came out wrong before saving. A word stored with a typo gets practised with the typo.</div>';
+
+  d.words.forEach(function(w, i){
+    const pat = LEX.mainPattern(w.text);
+    h += '<div class="card" style="padding:12px">' +
+           '<div class="row" style="margin-bottom:8px">' +
+             '<input type="text" data-w="' + i + '" value="' + esc(w.text) + '" autocapitalize="off" autocorrect="off" spellcheck="false" style="font-weight:800;letter-spacing:.03em">' +
+             '<button class="iconbtn" data-drop="' + i + '" aria-label="Remove">✕</button>' +
+           "</div>" +
+           '<input type="text" data-s="' + i + '" value="' + esc(w.sentence) + '" placeholder="Sentence (optional — helps her hear it in context)" style="font-size:14px">' +
+           (pat ? '<div style="margin-top:8px"><span class="tag">' + esc(pat.label) + "</span></div>" : "") +
+         "</div>";
+  });
+
+  h += '<button class="btn ghost wide" data-act="addrow" style="margin-bottom:10px">+ Add another word</button>' +
+       '<button class="btn go wide big" data-act="saveList">Save ' + plural(d.words.length, "word") + "</button>";
+  v.innerHTML = h;
+}
+
+function collectReview(){
+  document.querySelectorAll("[data-w]").forEach(function(inp){
+    draft.words[+inp.dataset.w].text = inp.value.trim();
+  });
+  document.querySelectorAll("[data-s]").forEach(function(inp){
+    draft.words[+inp.dataset.s].sentence = inp.value.trim();
+  });
+}
+
+function saveDraft(){
+  HEAR.stop();
+  collectReview();
+  const clean = draft.words.filter(function(w){ return w.text.length > 1; });
+  if(!clean.length){ alert("No words to save yet."); return; }
+
+  if(el("f-test")) draft.testDate = el("f-test").value;
+  let listId = draft.listId;
+  if(!listId){
+    const t = draft.title;
+    const l = {id:uid(), title:t || suggestTitle(), created:today(), testDate:draft.testDate || ""};
+    DB.lists.push(l);
+    listId = l.id;
+  }else if(draft.testDate){
+    const l = listById(listId); if(l) l.testDate = draft.testDate;
+  }
+  const existing = new Set(words().filter(function(w){ return w.listId === listId; })
+                                  .map(function(w){ return w.text.toLowerCase(); }));
+  clean.forEach(function(w){
+    if(existing.has(w.text.toLowerCase())) return;
+    DB.words.push(newWord(w.text, w.sentence, listId));
+  });
+  DB.activeListId = listId;      /* the list you just added is the one she practises */
+  save();
+  draft = null; openList = listId;
+  go("lists");
+}
+
+/* ==========================================================================
+   PRACTICE SESSION
+   The loop is the same at every scaffold level: retrieve, compare, correct.
+   What changes is how much support is on screen when she retrieves.
+     meet   - word visible, copy it (first contact)
+     fade   - word shown with letters missing
+     ccc    - word shown, then hidden (cover-copy-compare)
+     recall - audio only, nothing on screen
+   ========================================================================== */
+let S = null;
+
+function buildSession(){
+  const size = DB.profile.sessionSize;
+  const maxNew = DB.profile.newPerSession;
+  const fresh = freshWords().slice(0, maxNew);
+  const room = Math.max(0, size - fresh.length);
+  let due = dueWords().sort(function(a, b){
+    return testIn(a) - testIn(b) || a.box - b.box || a.due.localeCompare(b.due);
+  }).slice(0, room);
+
+  /* With a test within three days, pull in that list's shakiest words even if
+     the schedule would not have surfaced them yet. */
+  if(due.length < room){
+    const chosen = new Set(due.map(function(w){ return w.id; }));
+    const urgent = words().filter(function(w){
+      return !chosen.has(w.id) && w.seen > 0 && w.box < 4 && testIn(w) <= 3;
+    }).sort(function(a, b){ return a.box - b.box; });
+    due = due.concat(urgent.slice(0, room - due.length));
+  }
+
+  let items = [];
+  if(!fresh.length && !due.length){
+    /* nothing scheduled: a light refresher on the weakest words */
+    const pool = words().slice().sort(function(a, b){ return a.box - b.box; }).slice(0, size);
+    items = pool.map(function(w){ return {wid:w.id, stage:w.box <= 2 ? "ccc" : "recall"}; });
+    return shuffle(items);
+  }
+
+  const dueItems = due.map(function(w){ return {wid:w.id, stage:w.box <= 2 ? "ccc" : "recall"}; });
+  const half = Math.ceil(dueItems.length / 2);
+
+  /* Three spaced encounters per new word, with review words interleaved
+     between them. Spacing inside the session, not just across days. */
+  const A = fresh.map(function(w){ return {wid:w.id, stage:"meet"}; });
+  const B = shuffle(fresh.map(function(w){ return {wid:w.id, stage:"fade"}; }).concat(dueItems.slice(0, half)));
+  const C = shuffle(fresh.map(function(w){ return {wid:w.id, stage:"recall"}; }).concat(dueItems.slice(half)));
+  return A.concat(B, C);
+}
+
+function startSession(){
+  if(!words().length){ startAdd(null); return; }
+  SPEAK.unlock(); SFX.unlock();
+  S = {items:buildSession(), i:0, right:0, wrong:0, start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:""};
+  if(!S.items.length){ S = null; alert("No words available yet."); return; }
+  document.body.classList.add("playing");
+  go("play");
+}
+function endSession(){
+  document.body.classList.remove("playing");
+  SPEAK.stop();
+  S = null;
+  go("home");
+}
+
+RENDER.play = function(){
+  if(!S){ endSession(); return; }
+  const v = el("v-play");
+  if(S.i >= S.items.length) return renderDone(v);
+
+  const it = S.items[S.i];
+  const w = wordById(it.wid);
+  if(!w){ S.i++; return RENDER.play(); }
+
+  const progress = Math.round(S.i / S.items.length * 100);
+  const head =
+    '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="quit" aria-label="Stop">✕</button>' +
+      '<div class="grow"><div class="bar"><i style="width:' + progress + '%"></i></div></div>' +
+      '<span class="tiny">' + (S.i + 1) + "/" + S.items.length + "</span>" +
+    "</div>";
+
+  if(S.phase === "ask")     return v.innerHTML = head + askCard(w, it), afterRender(w, it);
+  if(S.phase === "judge")   return v.innerHTML = head + judgeCard(w, it), afterJudge(w, it);
+  if(S.phase === "correct") return v.innerHTML = head + correctCard(w, it), afterRender(w, it, true);
+};
+
+function askCard(w, it){
+  const pats = LEX.patterns(w.text);
+  const ch = LEX.chunks(w.text);
+  let body = "";
+
+  if(it.stage === "meet"){
+    body =
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">New word</p>' +
+      '<div class="word xl" style="margin-bottom:12px">' + esc(w.text) + "</div>" +
+      (ch.length > 1 ? '<div class="chips" style="margin-bottom:12px">' + ch.map(function(c){ return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div>" : "") +
+      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:14px">' +
+        '<button class="btn ghost sm" data-act="hear">🔊 Hear it</button>' +
+        '<button class="btn ghost sm" data-act="spell">🔤 Spell it out</button>' +
+      "</div>" +
+      (DB.profile.hints && pats.length ?
+        '<div class="note" style="margin-bottom:14px"><b>' + esc(pats[0].label) + ".</b> " + esc(pats[0].tip) + "</div>" : "") +
+      '<p class="tiny center" style="margin-bottom:6px">Now type it while you look at it.</p>';
+  }
+
+  if(it.stage === "fade"){
+    body =
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Fill the gaps</p>' +
+      '<div class="word xl" style="margin-bottom:14px">' + blanked(w.text, 0.55) + "</div>" +
+      '<div class="row" style="justify-content:center;margin-bottom:14px">' +
+        '<button class="btn ghost sm" data-act="hear">🔊 Hear it</button>' +
+      "</div>";
+  }
+
+  if(it.stage === "ccc"){
+    body =
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Look, cover, write</p>' +
+      '<div id="peek" class="word xl" style="margin-bottom:14px">' + esc(w.text) + "</div>" +
+      '<div class="row" style="justify-content:center;margin-bottom:14px">' +
+        '<button class="btn ghost sm" data-act="hear">🔊 Hear it</button>' +
+      "</div>";
+  }
+
+  if(it.stage === "recall"){
+    body =
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Listen and spell</p>' +
+      '<div class="center" style="font-size:52px;margin:6px 0 10px">🎧</div>' +
+      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:14px">' +
+        '<button class="btn ghost sm" data-act="hear">🔊 Say it again</button>' +
+      "</div>" +
+      (SPEAK.available() && !it.shown ?
+        '<p class="center" style="margin:0 0 14px"><button class="tiny" data-act="reveal" style="text-decoration:underline">Can\'t hear it? Show me the word</button></p>' :
+        '<div class="word lg" style="margin-bottom:14px">' + esc(w.text) + "</div>");
+  }
+
+  return '<div class="card">' + body +
+    '<input class="answer" id="ans" type="text" autocapitalize="off" autocomplete="off" ' +
+      'autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="type here">' +
+    '<button class="btn go wide big" data-act="submit" style="margin-top:12px">Check it</button>' +
+  "</div>";
+}
+
+function judgeCard(w, it){
+  const ok = sameWord(S.attempt, w.text);
+  if(ok){
+    return '<div class="card center pop">' +
+             '<div class="verdict yes">✓ Yes! That is exactly right.</div>' +
+             '<div class="word xl" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
+             (w.sentence ? '<p class="tiny">' + esc(w.sentence) + "</p>" : "") +
+             '<button class="btn go wide big" data-act="next" style="margin-top:12px">Next →</button>' +
+           "</div>";
+  }
+  const ops = S.ops;
+  const pats = LEX.patterns(w.text);
+  return '<div class="card">' +
+           '<div class="verdict no">Not yet — look at the difference</div>' +
+           '<p class="tiny center" style="margin-bottom:2px">You wrote</p>' +
+           '<div class="word lg" style="margin-bottom:12px">' + renderAttempt(ops) + "</div>" +
+           '<p class="tiny center" style="margin-bottom:2px">The word is</p>' +
+           '<div class="word xl" style="margin-bottom:12px">' + renderTarget(ops) + "</div>" +
+           (DB.profile.hints && pats.length ?
+             '<div class="note" style="margin-bottom:12px"><b>' + esc(pats[0].label) + ".</b> " + esc(pats[0].tip) + "</div>" : "") +
+           '<div class="row" style="justify-content:center;margin-bottom:12px">' +
+             '<button class="btn ghost sm" data-act="spell">🔤 Spell it out</button>' +
+           "</div>" +
+           '<button class="btn wide big" data-act="fix">Now write it correctly →</button>' +
+         "</div>";
+}
+
+function correctCard(w){
+  return '<div class="card">' +
+           '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Write it correctly</p>' +
+           '<div class="word xl" style="margin-bottom:14px">' + esc(w.text) + "</div>" +
+           '<div class="row" style="justify-content:center;margin-bottom:14px">' +
+             '<button class="btn ghost sm" data-act="hear">🔊 Hear it</button>' +
+           "</div>" +
+           '<input class="answer" id="ans" type="text" autocapitalize="off" autocomplete="off" ' +
+             'autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="type it">' +
+           '<button class="btn go wide big" data-act="submitfix" style="margin-top:12px">Check it</button>' +
+         "</div>";
+}
+
+function afterRender(w, it, isFix){
+  const a = el("ans");
+  if(a){ a.value = ""; setTimeout(function(){ a.focus(); }, 60); }
+
+  /* cover-copy-compare: the word is visible only briefly */
+  if(!isFix && it.stage === "ccc"){
+    const peek = el("peek");
+    SPEAK.dictate(w.text, "", {rate:DB.profile.rate});
+    setTimeout(function(){
+      if(peek) peek.innerHTML = '<span style="opacity:.25">•••</span>';
+    }, 4000);
+  }
+  if(!isFix && it.stage === "recall"){
+    setTimeout(function(){ SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }, 250);
+  }
+  if(!isFix && it.stage === "meet"){
+    setTimeout(function(){ SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }, 250);
+  }
+}
+function afterJudge(w){
+  if(sameWord(S.attempt, w.text)) SFX.good(); else SFX.soft();
+}
+
+function submitAnswer(){
+  const a = el("ans"); if(!a) return;
+  S.attempt = a.value.trim();
+  if(!S.attempt) return;
+  const it = S.items[S.i], w = wordById(it.wid);
+  const ok = sameWord(S.attempt, w.text);
+  S.ops = align(S.attempt, w.text);
+  if(!ok) recordMisses(w, S.ops);
+  gradeWord(w, ok, it.stage, it.shown);
+  if(ok) S.right++; else S.wrong++;
+  S.phase = "judge";
+  SPEAK.stop();
+  RENDER.play();
+}
+function submitFix(){
+  const a = el("ans"); if(!a) return;
+  const it = S.items[S.i], w = wordById(it.wid);
+  if(!sameWord(a.value.trim(), w.text)){
+    SFX.soft();
+    a.value = "";
+    a.placeholder = "not quite — try again";
+    a.focus();
+    return;
+  }
+  SFX.good();
+  /* Re-ask this word later in the same session: an error corrected once is
+     not yet learned. */
+  const at = Math.min(S.items.length, S.i + 4);
+  S.items.splice(at, 0, {wid:w.id, stage:"recall", retry:true});
+  nextItem();
+}
+function nextItem(){
+  S.i++; S.phase = "ask"; S.attempt = ""; S.ops = null;
+  SPEAK.stop();
+  RENDER.play();
+}
+
+function recordMisses(w, ops){
+  ops.forEach(function(o){
+    if(o.t === "sub")     w.misses.push(o.b + "→" + o.a);
+    if(o.t === "missing") w.misses.push("missed " + o.b);
+  });
+  if(w.misses.length > 24) w.misses = w.misses.slice(-24);
+}
+
+function gradeWord(w, ok, stage, shown){
+  const t = today();
+  w.seen++; w.lastSeen = t;
+  if(ok) w.right++; else w.wrong++;
+
+  /* Only unsupported retrieval moves the schedule. Copying a word you can see
+     is practice, not evidence of memory. */
+  if(stage !== "recall" && stage !== "ccc"){ save(); return; }
+  if(shown){ save(); return; }
+
+  if(ok){
+    const newDay = w.days.indexOf(t) < 0;
+    if(newDay) w.days.push(t);
+    /* Past box 2, a promotion requires a correct answer on a *different* day,
+       so mastery cannot be faked inside one long sitting. */
+    if(w.box < 2 || newDay || w.days.length > w.box){
+      if(w.box < MASTER_BOX) w.box++;
+    }
+    w.due = addDays(t, INTERVALS[w.box]);
+    capToTest(w, t);
+    if(w.box >= 3 && !w.g3){ w.g3 = true; if(S) S.gems += 1; }
+    if(w.box >= MASTER_BOX && !w.g5){ w.g5 = true; if(S) S.gems += 2; }
+  }else{
+    w.box = Math.max(0, w.box - 2);
+    w.due = t;
+  }
+  save();
+}
+
+function renderDone(v){
+  const secs = Math.round((Date.now() - S.start) / 1000);
+  const total = S.right + S.wrong;
+  const pct = total ? Math.round(S.right / total * 100) : 0;
+
+  if(!S.closed){
+    S.closed = true;
+    S.gems += 1;                                    /* finishing counts */
+    touchStreak();
+    if(DB.streak > 0 && DB.streak % 7 === 0) S.gems += 3;
+    S.hatched = addGems(S.gems);
+    if(pct > DB.best) DB.best = pct;
+    DB.log.push({d:today(), n:total, right:S.right, sec:secs});
+    if(DB.log.length > 400) DB.log = DB.log.slice(-400);
+    save(); chrome();
+    if(S.hatched) setTimeout(function(){ SFX.hatch(); }, 350);
+  }
+
+  const newest = Math.max(0, DB.sprites - 1);
+  v.innerHTML =
+    '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 4px'>Practice done 🎉</h2>" +
+      '<p class="muted" style="margin:0 0 14px">' + S.right + " right out of " + total + " · " + pct + "%</p>" +
+      '<div class="stats" style="margin-bottom:14px">' +
+        '<div class="s"><b>+' + S.gems + "</b><span>gems</span></div>" +
+        '<div class="s"><b>' + DB.streak + "</b><span>day streak</span></div>" +
+        '<div class="s"><b>' + words().filter(isMastered).length + "</b><span>mastered</span></div>" +
+      "</div>" +
+      (S.hatched ?
+        '<div class="card flat" style="margin:0 0 12px;background:var(--gold-soft);border-color:transparent">' +
+          "<p style='font-weight:800;margin:0 0 6px'>An egg hatched!</p>" +
+          "<div style='width:130px;margin:0 auto'>" + ART.draw(newest) + "</div>" +
+          "<p style='font-weight:800;margin:6px 0 2px'>" + esc(ART.SPRITES[newest % ART.count].n) + "</p>" +
+          '<p class="tiny" style="margin:0">"' + esc(ART.SPRITES[newest % ART.count].tip) + '"</p>' +
+        "</div>" :
+        '<div class="bar teal" style="margin-bottom:6px"><i style="width:' + (eggProgress()/GEMS_PER_EGG*100) + '%"></i></div>' +
+        '<p class="tiny" style="margin:0 0 12px">' + (GEMS_PER_EGG - eggProgress()) + " more gems until the next egg hatches</p>") +
+      '<button class="btn go wide big" data-act="done">Done</button>' +
+      '<button class="btn ghost wide" data-act="again" style="margin-top:8px">Practise again</button>' +
+    "</div>";
+}
+
+/* ==========================================================================
+   SPEED SPRINT - fluency, not acquisition. Mastered-ish words only, so she is
+   racing on words she already owns rather than guessing at new ones.
+   ========================================================================== */
+let SP = null;
+function startSprint(){
+  const pool = words().filter(function(w){ return w.box >= 2; });
+  if(pool.length < 3){
+    alert("Speed Sprint unlocks once a few words are solid. Do a normal practice first.");
+    return;
+  }
+  SPEAK.unlock(); SFX.unlock();
+  SP = {pool:shuffle(pool.slice()), i:0, right:0, wrong:0, end:Date.now() + 60000, over:false};
+  document.body.classList.add("playing");
+  RENDER.play = renderSprint;
+  go("play");
+  SP.timer = setInterval(function(){
+    if(!SP) return;
+    if(Date.now() >= SP.end){ SP.over = true; clearInterval(SP.timer); renderSprint(); }
+    else { const t = el("sp-clock"); if(t) t.textContent = Math.max(0, Math.ceil((SP.end - Date.now())/1000)) + "s"; }
+  }, 250);
+}
+function endSprint(){
+  if(SP && SP.timer) clearInterval(SP.timer);
+  SP = null;
+  RENDER.play = playRenderer;
+  document.body.classList.remove("playing");
+  SPEAK.stop();
+  go("home");
+}
+function renderSprint(){
+  const v = el("v-play");
+  if(!SP) return;
+  if(SP.over){
+    const gained = Math.floor(SP.right / 4);
+    if(!SP.closed){ SP.closed = true; if(gained){ addGems(gained); save(); chrome(); } }
+    v.innerHTML = '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 6px'>Time!</h2>" +
+      "<p class='muted'>" + plural(SP.right, "word") + " spelled correctly in 60 seconds.</p>" +
+      (gained ? "<p class='tiny'>+" + gained + " gems</p>" : "") +
+      '<button class="btn go wide big" data-act="sprintdone" style="margin-top:10px">Done</button>' +
+    "</div>";
+    return;
+  }
+  const w = SP.pool[SP.i % SP.pool.length];
+  v.innerHTML =
+    '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="sprintdone" aria-label="Stop">✕</button>' +
+      '<div class="grow center"><b id="sp-clock">60s</b></div>' +
+      '<span class="tiny">✓ ' + SP.right + "</span>" +
+    "</div>" +
+    '<div class="card">' +
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Speed Sprint</p>' +
+      '<div class="center" style="font-size:46px;margin:2px 0 8px">⚡️</div>' +
+      '<div class="row" style="justify-content:center;margin-bottom:12px">' +
+        '<button class="btn ghost sm" data-act="hear-sprint">🔊 Again</button>' +
+      "</div>" +
+      (SPEAK.available() && !SP.shown ?
+        '<p class="center" style="margin:0 0 10px"><button class="tiny" data-act="revealsprint" style="text-decoration:underline">Can\'t hear it? Show the words</button></p>' :
+        '<div class="word lg" style="margin-bottom:12px">' + esc(w.text) + "</div>") +
+      '<input class="answer" id="ans" type="text" autocapitalize="off" autocomplete="off" ' +
+        'autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="type it fast">' +
+      '<button class="btn go wide" data-act="sprintgo" style="margin-top:10px">Enter</button>' +
+    "</div>";
+  const a = el("ans"); if(a) setTimeout(function(){ a.focus(); }, 50);
+  SPEAK.say([w.text], {rate:0.95});
+}
+function sprintSubmit(){
+  const a = el("ans"); if(!a || !SP) return;
+  const w = SP.pool[SP.i % SP.pool.length];
+  const ok = sameWord(a.value.trim(), w.text);
+  if(ok){ SP.right++; SFX.tick(); gradeWord(w, true, "recall"); }
+  else  { SP.wrong++; SFX.soft(); gradeWord(w, false, "recall"); }
+  SP.i++;
+  renderSprint();
+}
+
+/* ==========================================================================
+   PATTERN SORT - word study. Grouping by rule is what makes a list transfer
+   to words that were never on it.
+   ========================================================================== */
+let SO = null;
+function startSort(){
+  const buckets = {};
+  words().forEach(function(w){
+    const p = LEX.mainPattern(w.text);
+    if(!p) return;
+    (buckets[p.id] = buckets[p.id] || {pat:p, ws:[]}).ws.push(w);
+  });
+  const usable = Object.values(buckets).filter(function(b){ return b.ws.length >= 2; }).slice(0, 3);
+  if(usable.length < 2){
+    alert(usable.length === 1
+      ? "Every word here follows the same rule, so there is nothing to sort them into. Add another list — or build one with \u201cA mix of everything\u201d — and this game opens up."
+      : "Pattern Sort needs a few more words before it can group them. Add this week's list and try again.");
+    return;
+  }
+  const cards = shuffle(usable.reduce(function(acc, b){
+    return acc.concat(b.ws.slice(0, 4).map(function(w){ return {text:w.text, pid:b.pat.id}; }));
+  }, []));
+  SO = {cats:usable.map(function(b){ return b.pat; }), cards:cards, i:0, right:0, wrong:0};
+  SFX.unlock();
+  document.body.classList.add("playing");
+  RENDER.play = renderSort;
+  go("play");
+}
+function endSort(){
+  SO = null; RENDER.play = playRenderer;
+  document.body.classList.remove("playing");
+  go("home");
+}
+function renderSort(){
+  const v = el("v-play");
+  if(!SO) return;
+  if(SO.i >= SO.cards.length){
+    const gained = SO.right >= SO.cards.length - 1 ? 1 : 0;
+    if(!SO.closed){ SO.closed = true; if(gained){ addGems(gained); save(); chrome(); } }
+    v.innerHTML = '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 6px'>Sorted!</h2>" +
+      "<p class='muted'>" + SO.right + " of " + SO.cards.length + " in the right group.</p>" +
+      (gained ? "<p class='tiny'>+1 gem</p>" : "") +
+      '<button class="btn go wide big" data-act="sortdone" style="margin-top:10px">Done</button>' +
+    "</div>";
+    return;
+  }
+  const c = SO.cards[SO.i];
+  v.innerHTML =
+    '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="sortdone" aria-label="Stop">✕</button>' +
+      '<div class="grow"><div class="bar"><i style="width:' + (SO.i / SO.cards.length * 100) + '%"></i></div></div>' +
+      '<span class="tiny">' + (SO.i + 1) + "/" + SO.cards.length + "</span>" +
+    "</div>" +
+    '<div class="card center">' +
+      '<p class="tiny" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Which rule does this word follow?</p>' +
+      '<div class="word xl" style="margin-bottom:6px">' + esc(c.text) + "</div>" +
+      '<button class="btn ghost sm" data-act="hear-sort">🔊 Hear it</button>' +
+    "</div>" +
+    SO.cats.map(function(p){
+      return '<button class="btn ghost wide" data-cat="' + p.id + '" style="margin-bottom:9px;flex-direction:column;align-items:flex-start;padding:12px 16px;min-height:auto">' +
+               "<b>" + esc(p.label) + "</b>" +
+               '<span class="tiny" style="font-weight:600;text-align:left">' + esc(p.tip) + "</span>" +
+             "</button>";
+    }).join("");
+}
+function sortPick(pid){
+  const c = SO.cards[SO.i];
+  if(pid === c.pid){ SO.right++; SFX.good(); }
+  else{ SO.wrong++; SFX.soft(); }
+  SO.i++;
+  renderSort();
+}
+const playRenderer = RENDER.play;
+
+/* ==========================================================================
+   SPRITES
+   ========================================================================== */
+RENDER.sprites = function(){
+  const v = el("v-sprites");
+  let h = "<h2 style='margin:6px 0 4px'>My sprites</h2>" +
+          '<p class="muted" style="margin:0 0 14px">' + DB.sprites + " of " + ART.count + " hatched. " +
+          "Tap one to hear its spelling tip.</p>" +
+          '<div class="card flat" style="padding:12px">' +
+            '<div class="row spread" style="margin-bottom:8px"><h3 style="margin:0">Next egg</h3>' +
+            '<span class="tiny">' + eggProgress() + " / " + GEMS_PER_EGG + "</span></div>" +
+            '<div class="bar teal"><i style="width:' + (eggProgress()/GEMS_PER_EGG*100) + '%"></i></div>' +
+          "</div>" +
+          '<div class="gallery">';
+
+  for(let i = 0; i < ART.count; i++){
+    const got = i < DB.sprites;
+    h += '<div class="sprite' + (got ? "" : " locked") + '"' + (got ? ' data-sprite="' + i + '"' : "") + ">" +
+           ART.draw(i) +
+           '<div class="nm">' + (got ? esc(ART.SPRITES[i].n) : "???") + "</div>" +
+         "</div>";
+  }
+  h += "</div>" +
+       '<div id="sprite-tip" class="note" style="margin-top:14px;display:none"></div>';
+  v.innerHTML = h;
+};
+
+/* ==========================================================================
+   GROWN-UPS
+   ========================================================================== */
+let grownTab = "progress";
+
+RENDER.grown = function(){
+  const v = el("v-grown");
+  const tabs = [["progress","Progress"], ["words","Words"], ["settings","Settings"], ["how","Method"]];
+  let h = "<h2 style='margin:6px 0 12px'>Grown-ups</h2>" +
+          '<div class="seg">' + tabs.map(function(t){
+            return '<button data-gt="' + t[0] + '" class="' + (grownTab === t[0] ? "on" : "") + '">' + t[1] + "</button>";
+          }).join("") + "</div>";
+
+  if(grownTab === "progress") h += progressPane();
+  if(grownTab === "words")    h += wordsPane();
+  if(grownTab === "settings") h += settingsPane();
+  if(grownTab === "how")      h += methodPane();
+  v.innerHTML = h;
+};
+
+function progressPane(){
+  const ws = words();
+  const mastered = ws.filter(isMastered).length;
+  const last14 = DB.log.filter(function(r){ return daysBetween(r.d, today()) < 14; });
+  const totalTried = last14.reduce(function(a, r){ return a + r.n; }, 0);
+  const totalRight = last14.reduce(function(a, r){ return a + r.right; }, 0);
+  const acc = totalTried ? Math.round(totalRight / totalTried * 100) : 0;
+  const days = new Set(last14.map(function(r){ return r.d; })).size;
+
+  const tricky = ws.filter(function(w){ return w.wrong >= 2; })
+                   .sort(function(a, b){ return (b.wrong - b.right) - (a.wrong - a.right); })
+                   .slice(0, 8);
+
+  let h = '<div class="stats" style="margin-bottom:14px">' +
+            '<div class="s"><b>' + mastered + "</b><span>mastered</span></div>" +
+            '<div class="s"><b>' + acc + "%</b><span>last 14 days</span></div>" +
+            '<div class="s"><b>' + days + "</b><span>days practised</span></div>" +
+          "</div>";
+
+  h += '<div class="card"><h3>Needs work</h3>';
+  if(!tricky.length){
+    h += '<p class="muted" style="margin:0">Nothing is causing trouble right now.</p>';
+  }else{
+    tricky.forEach(function(w){
+      const common = w.misses.length ? w.misses.slice(-3).join(", ") : "";
+      h += '<div class="wrow"><div class="grow"><div class="wt">' + esc(w.text) + "</div>" +
+           (common ? '<div class="tiny">' + esc(common) + "</div>" : "") + "</div>" +
+           '<span class="tiny">' + w.right + "✓ / " + w.wrong + "✗</span></div>";
+    });
+  }
+  h += "</div>";
+
+  h += '<div class="card"><h3>Print a practice test</h3>' +
+       '<p class="tiny" style="margin-bottom:10px">Two pages: a numbered answer sheet for her, and a dictation sheet with the words and sentences for you. Writing by hand is still the form the school test takes.</p>' +
+       '<select id="print-list" style="margin-bottom:10px">' +
+         '<option value="">All words</option>' +
+         DB.lists.map(function(l){ return '<option value="' + l.id + '">' + esc(l.title) + "</option>"; }).join("") +
+       "</select>" +
+       '<button class="btn ghost wide" data-act="print">Print</button></div>';
+
+  h += '<div class="card"><h3>Backup</h3>' +
+       '<p class="tiny" style="margin-bottom:10px">Everything lives in this browser only. Clearing site data wipes it — export now and then.</p>' +
+       '<button class="btn ghost wide" data-act="export" style="margin-bottom:8px">Export a backup file</button>' +
+       '<input type="file" id="f-restore" accept="application/json" style="display:none">' +
+       '<button class="btn ghost wide" data-act="restore">Restore from backup</button></div>';
+  return h;
+}
+
+function wordsPane(){
+  const ws = words().slice().sort(function(a, b){ return a.box - b.box || a.text.localeCompare(b.text); });
+  if(!ws.length) return '<div class="empty"><span class="ic">📋</span>No words yet.</div>';
+  let h = '<div class="card flat" style="padding:10px 14px">';
+  ws.forEach(function(w){
+    const st = statusOf(w);
+    const l = listById(w.listId);
+    h += '<div class="wrow"><div class="grow">' +
+           '<div class="wt">' + esc(w.text) + "</div>" +
+           '<div class="tiny">' + (l ? esc(l.title) + " · " : "") +
+             (w.seen ? "due " + esc(w.due) : "not started") + "</div>" +
+         "</div>" +
+         '<span class="badge ' + st.k + '">' + st.t + "</span>" +
+         '<button class="iconbtn" data-del="' + w.id + '" aria-label="Delete">🗑</button>' +
+       "</div>";
+  });
+  return h + "</div>";
+}
+
+function settingsPane(){
+  const p = DB.profile;
+  return '<div class="card">' +
+    '<label class="fld"><span>Her name</span><input type="text" id="s-name" value="' + esc(p.name) + '" placeholder="e.g. Nora"></label>' +
+    '<label class="fld"><span>Words per practice session</span>' +
+      '<input type="number" id="s-size" min="4" max="20" value="' + p.sessionSize + '"></label>' +
+    '<label class="fld"><span>New words introduced per session</span>' +
+      '<input type="number" id="s-new" min="1" max="8" value="' + p.newPerSession + '">' +
+      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Three is a good ceiling for a child who finds spelling hard. Too many new words at once and nothing sticks.</span></label>' +
+    '<label class="fld"><span>Reading speed</span>' +
+      '<select id="s-rate">' +
+        ["0.7|Slow","0.82|Normal","0.95|Quick"].map(function(o){
+          const p2 = o.split("|");
+          return '<option value="' + p2[0] + '"' + (String(DB.profile.rate) === p2[0] ? " selected" : "") + ">" + p2[1] + "</option>";
+        }).join("") +
+      "</select></label>" +
+    '<div class="switch"><span>Sound effects</span><input type="checkbox" id="s-sound"' + (p.sound !== false ? " checked" : "") + "></div>" +
+    '<div class="switch"><span>Show spelling-rule hints</span><input type="checkbox" id="s-hints"' + (p.hints !== false ? " checked" : "") + "></div>" +
+    '<div class="switch"><span>Also review older lists<br><span class="tiny" style="font-weight:600">Off means practice uses only the list marked <i>practising</i> \u2014 this week\'s words and nothing else.</span></span>' +
+      '<input type="checkbox" id="s-reviewold"' + (p.reviewOld ? " checked" : "") + "></div>" +
+    '<div class="switch"><span>Bigger text</span><input type="checkbox" id="s-big"' + (p.big ? " checked" : "") + "></div>" +
+    '<button class="btn wide" data-act="savesettings" style="margin-top:14px">Save settings</button>' +
+  "</div>" +
+  '<div class="card"><h3>Start over</h3>' +
+    '<p class="tiny" style="margin-bottom:10px">Deletes every list, word and sprite on this device.</p>' +
+    '<button class="btn warn wide" data-act="wipe">Erase everything</button></div>';
+}
+
+function methodPane(){
+  return '<div class="card">' +
+    "<h3>Why the app behaves the way it does</h3>" +
+    '<p class="ref"><b>She corrects her own errors, letter by letter.</b> The corrected-test method — test, compare against the correct form, fix it immediately — outperformed study-only approaches in Horn\'s work on spelling instruction (1947) and in Schoephoerster\'s comparison of test-study plans (1962). That is why a wrong answer is never simply marked wrong and moved past: she is shown the difference and made to write it correctly before continuing.</p>' +
+    '<p class="ref"><b>Look, cover, write, compare.</b> Cover-Copy-Compare has a long evidence base as a low-cost spelling intervention (Skinner, McLaughlin &amp; Logan, 1997, review). It is the middle scaffold level here.</p>' +
+    '<p class="ref"><b>Retrieval, not rereading.</b> Recalling a word from memory produces far more durable learning than re-studying it (Roediger &amp; Karpicke, 2006). Only unsupported retrieval moves a word forward in the schedule — copying a word she can see does not count as evidence.</p>' +
+    '<p class="ref"><b>Spacing beats cramming.</b> Reviews expand across days — 1, 2, 4, 7, 14 (Cepeda, Pashler, Vul, Wixted &amp; Rohrer, 2006). Past the early boxes a word can only be promoted on a <i>different day</i>, so mastery cannot be manufactured in one long sitting.</p>' +
+    '<p class="ref"><b>Patterns, not fifteen separate shapes.</b> Every word is tagged with its orthographic pattern and Pattern Sort groups by rule, following the word-study tradition (Bear, Invernizzi, Templeton &amp; Johnston). A rule transfers to words that were never on the list.</p>' +
+    '<p class="ref"><b>She is never shown a misspelling.</b> Simply reading an incorrect spelling measurably degrades later accuracy (Brown, 1988; Jacoby &amp; Hollingshead, 1990). So there is no "pick the correct spelling" game here, even though almost every spelling app has one. The only wrong spelling she ever sees is the one she just wrote, on the compare screen, which is the mechanism the corrected-test method depends on.</p>' +
+    '<p class="ref"><b>Rewards follow real progress.</b> Gems are awarded when a word actually becomes durable, not for time spent or taps made, because rewards attached to mere activity can crowd out the interest they were meant to support (Deci &amp; Ryan; Lepper, Greene &amp; Nisbett, 1973).</p>' +
+    '<p class="ref"><b>Hearing the word matters.</b> A spelling test is an auditory task, so dictation follows the classroom pattern: word, sentence, word again. The sentence also disambiguates homophones — there, their and they\'re are indistinguishable without it.</p>' +
+  "</div>";
+}
+
+/* --- print ---------------------------------------------------------------- */
+function doPrint(){
+  const sel = el("print-list");
+  const id = sel ? sel.value : "";
+  const ws = words().filter(function(w){ return !id || w.listId === id; });
+  if(!ws.length){ alert("No words to print."); return; }
+  const title = id ? (listById(id) || {}).title : "All words";
+  const name = DB.profile.name ? DB.profile.name + " — " : "";
+
+  el("print").innerHTML =
+    "<h1>" + esc(name + title) + "</h1>" +
+    '<div class="sub">Spelling practice · ' + new Date().toLocaleDateString() + "</div>" +
+    "<ol>" + ws.map(function(){ return "<li>&nbsp;</li>"; }).join("") + "</ol>" +
+    '<div class="dict"><h1>Dictation sheet</h1>' +
+    '<div class="sub">Read the word, then the sentence, then the word again.</div>' +
+    "<ol>" + ws.map(function(w){
+      return "<li><b>" + esc(w.text) + "</b>" + (w.sentence ? " — " + esc(w.sentence) : "") + "</li>";
+    }).join("") + "</ol></div>";
+  setTimeout(function(){ window.print(); }, 60);
+}
+
+/* --- export / restore ----------------------------------------------------- */
+function doExport(){
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "spelling-sprites-" + today() + ".json";
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function doRestore(file){
+  const r = new FileReader();
+  r.onload = function(){
+    try{
+      const d = JSON.parse(r.result);
+      if(!d || !Array.isArray(d.words)) throw new Error("bad file");
+      if(!confirm("Replace everything on this device with the backup?")) return;
+      DB = Object.assign(blank(), d);
+      DB.profile = Object.assign(blank().profile, d.profile || {});
+      save(); chrome(); go("grown");
+    }catch(e){ alert("That file could not be read as a Spelling Sprites backup."); }
+  };
+  r.readAsText(file);
+}
+
+/* --- one global click handler -------------------------------------------- */
+document.addEventListener("click", function(e){
+  const t = e.target.closest("[data-act],[data-go],[data-open],[data-mode],[data-drop],[data-del],[data-say],[data-gt],[data-cat],[data-sprite],[data-unheard]");
+  if(!t) return;
+
+  /* sprite tip */
+  if(t.dataset.sprite != null){
+    const s = ART.SPRITES[+t.dataset.sprite % ART.count];
+    const box = el("sprite-tip");
+    box.style.display = "block";
+    box.innerHTML = "<b>" + esc(s.n) + " says:</b> " + esc(s.tip);
+    SPEAK.say([s.tip], {rate:0.9});
+    return;
+  }
+  if(t.dataset.open){ openList = t.dataset.open; go("lists"); return; }
+  if(t.dataset.mode){ if(t.dataset.mode !== "speak") HEAR.stop(); draft.mode = t.dataset.mode; draft.msg = ""; renderAdd(); return; }
+  if(t.dataset.gt){ grownTab = t.dataset.gt; RENDER.grown(); return; }
+  if(t.dataset.cat){ sortPick(t.dataset.cat); return; }
+  if(t.dataset.unheard != null){ draft.heard.splice(+t.dataset.unheard, 1); renderAdd(); return; }
+  if(t.dataset.drop != null){ collectReview(); draft.words.splice(+t.dataset.drop, 1); renderAdd(); return; }
+  if(t.dataset.say){
+    const w = wordById(t.dataset.say);
+    if(w){ SPEAK.unlock(); SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }
+    return;
+  }
+  if(t.dataset.del){
+    const w = wordById(t.dataset.del);
+    if(w && confirm('Delete "' + w.text + '"?')){
+      DB.words = DB.words.filter(function(x){ return x.id !== w.id; });
+      save(); RENDER.grown();
+    }
+    return;
+  }
+
+  const a = t.dataset.act;
+  const cur = S && S.items[S.i] ? wordById(S.items[S.i].wid) : null;
+
+  switch(a){
+    case "addlist":  startAdd(null); break;
+    case "addto":    startAdd(openList); break;
+    case "setactive": DB.activeListId = openList; save(); RENDER.lists(); break;
+    case "switch": {
+      const names = DB.lists.map(function(l, i){ return (i+1) + ". " + l.title; }).join("\n");
+      const pick = prompt("Which list should she practise?\n\n" + names, "1");
+      const i = parseInt(pick, 10) - 1;
+      if(DB.lists[i]){ DB.activeListId = DB.lists[i].id; save(); RENDER.home(); }
+      break;
+    }
+    case "canceladd":HEAR.stop(); draft = null; RENDER.lists(); break;
+    case "backadd":  draft.words = []; renderAdd(); break;
+    case "backlist": openList = null; RENDER.lists(); break;
+    case "addrow":   collectReview(); draft.words.push({text:"", sentence:""}); renderAdd(); break;
+    case "saveList": saveDraft(); break;
+    case "dellist": {
+      const l = listById(openList);
+      if(l && confirm('Delete "' + l.title + '" and its words?')){
+        DB.words = DB.words.filter(function(w){ return w.listId !== l.id; });
+        DB.lists = DB.lists.filter(function(x){ return x.id !== l.id; });
+        save(); openList = null; RENDER.lists();
+      }
+      break;
+    }
+    case "parse": {
+      const txt = el("f-text") ? el("f-text").value : "";
+      const found = LEX.parse(txt);
+      if(!found.length){ alert("No words found in that text yet."); break; }
+      if(el("f-title")) draft.title = el("f-title").value.trim() || draft.title;
+      draft.words = found.map(function(x){ return {text:x, sentence:LEX.sentenceFor(x)}; });
+      renderAdd();
+      break;
+    }
+    case "pickphoto": el("f-file").click(); break;
+    case "mic": {
+      if(HEAR.isOn()){ HEAR.stop(); draft.msg = ""; renderAdd(); break; }
+      draft.msg = "";
+      HEAR.start(function(text){
+        LEX.parse(text).forEach(function(w){
+          if(draft.heard.indexOf(w) < 0) draft.heard.push(w);
+        });
+        SFX.tick();
+        renderAdd();
+      }, function(state, detail){
+        if(state === "denied")      draft.msg = "The microphone is blocked for this page. Allow it in the browser's site settings, or use the Type tab with the keyboard's microphone key.";
+        else if(state === "error")  draft.msg = "Listening stopped (" + (detail || "error") + "). Tap to start again.";
+        else if(state === "unsupported") draft.msg = "This browser cannot listen. Use the Type tab with the keyboard microphone instead.";
+        renderAdd();
+      });
+      renderAdd();
+      break;
+    }
+    case "useheard": {
+      if(el("f-title")) draft.title = el("f-title").value.trim() || draft.title;
+      if(el("f-test"))  draft.testDate = el("f-test").value;
+      HEAR.stop();
+      draft.words = draft.heard.map(function(w){ return {text:w, sentence:LEX.sentenceFor(w)}; });
+      renderAdd();
+      break;
+    }
+    case "build": {
+      if(el("f-title")) draft.title = el("f-title").value.trim() || draft.title;
+      if(el("f-test"))  draft.testDate = el("f-test").value;
+      draft.gen = {
+        count: +el("g-count").value || 12,
+        grade: el("g-grade").value,
+        focus: el("g-focus").value
+      };
+      const picked = LEX.generate({
+        count: draft.gen.count,
+        grades: draft.gen.grade ? [+draft.gen.grade] : null,
+        focus: draft.gen.focus,
+        exclude: words().map(function(w){ return w.text; })
+      });
+      if(!picked.length){ alert("No new words match those boundaries — try a wider level or a different rule."); break; }
+      const opt = LEX.focusOptions().find(function(o){ return o.id === draft.gen.focus; });
+      if(opt && opt.id && draft.title.indexOf("Week of") === 0) draft.title = opt.label;
+      draft.words = picked.map(function(e){ return {text:e.w, sentence:e.s}; });
+      renderAdd();
+      break;
+    }
+
+    case "play":     startSession(); break;
+    case "sprint":   startSprint(); break;
+    case "sort":     startSort(); break;
+    case "quit":     if(confirm("Stop practice? Progress so far is saved.")) endSession(); break;
+    case "submit":   submitAnswer(); break;
+    case "submitfix":submitFix(); break;
+    case "fix":      S.phase = "correct"; RENDER.play(); break;
+    case "next":     nextItem(); break;
+    case "done":     endSession(); break;
+    case "again":    startSession(); break;
+    case "hear":     if(cur) SPEAK.dictate(cur.text, cur.sentence, {rate:DB.profile.rate}); break;
+    case "reveal":   if(S){ S.items[S.i].shown = true; RENDER.play(); } break;
+    case "spell":    if(cur) SPEAK.spellOut(cur.text); break;
+
+    case "hear-sprint": if(SP) SPEAK.say([SP.pool[SP.i % SP.pool.length].text], {rate:0.95}); break;
+    case "revealsprint": if(SP){ SP.shown = true; renderSprint(); } break;
+    case "sprintgo":    sprintSubmit(); break;
+    case "sprintdone":  endSprint(); break;
+    case "hear-sort":   if(SO) SPEAK.say([SO.cards[SO.i].text], {rate:DB.profile.rate}); break;
+    case "sortdone":    endSort(); break;
+
+    case "print":   doPrint(); break;
+    case "export":  doExport(); break;
+    case "restore": el("f-restore").click(); break;
+    case "savesettings": {
+      const p = DB.profile;
+      p.name = el("s-name").value.trim();
+      p.sessionSize = Math.max(4, Math.min(20, +el("s-size").value || 8));
+      p.newPerSession = Math.max(1, Math.min(8, +el("s-new").value || 3));
+      p.rate = parseFloat(el("s-rate").value) || 0.82;
+      p.sound = el("s-sound").checked;
+      p.hints = el("s-hints").checked;
+      p.reviewOld = el("s-reviewold").checked;
+      p.big = el("s-big").checked;
+      save(); chrome(); RENDER.grown();
+      break;
+    }
+    case "wipe":
+      if(confirm("Erase every list, word and sprite on this device? This cannot be undone.")){
+        if(confirm("Really erase everything?")){ DB = blank(); save(); chrome(); go("home"); }
+      }
+      break;
+  }
+});
+
+/* Enter key submits wherever there is an answer box. */
+document.addEventListener("keydown", function(e){
+  if(e.key !== "Enter") return;
+  const a = el("ans");
+  if(!a || document.activeElement !== a) return;
+  e.preventDefault();
+  if(SP) return sprintSubmit();
+  if(S && S.phase === "correct") return submitFix();
+  if(S) return submitAnswer();
+});
+
+document.addEventListener("change", function(e){
+  if(e.target.id === "f-restore" && e.target.files[0]) doRestore(e.target.files[0]);
+});
+
+/* --- boot ----------------------------------------------------------------- */
+load();
+chrome();
+go("home");
+
+/* Prime the speech engine on the very first touch. iOS refuses to speak until
+   a real user gesture has happened. */
+document.addEventListener("touchstart", function once(){
+  SPEAK.unlock(); SFX.unlock();
+  document.removeEventListener("touchstart", once);
+}, {passive:true, once:true});
+</script>
