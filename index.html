@@ -156,6 +156,20 @@ body.playing #tabs{display:none}
 }
 .answer:focus{border-style:solid;border-color:var(--violet);outline:none;background:#fff}
 
+/* --- handwriting pad --- */
+.pad{
+  width:100%;height:210px;display:block;border-radius:16px;
+  border:2px solid var(--line);background:#fff;touch-action:none;cursor:crosshair;
+}
+.pad.req{border-color:var(--violet)}
+.padbar{display:flex;gap:8px;margin:10px 0 0}
+.padbar .btn{flex:1}
+.model{
+  font-weight:800;letter-spacing:.09em;text-align:center;color:var(--teal);
+  font-size:clamp(26px,7.5vw,36px);
+}
+.shot{width:100%;border-radius:14px;border:1.5px solid var(--line);display:block;background:#fff}
+
 /* --- progress --- */
 .bar{height:9px;background:var(--line);border-radius:99px;overflow:hidden}
 .bar > i{display:block;height:100%;background:var(--violet);border-radius:99px;transition:width .3s}
@@ -1043,6 +1057,119 @@ const HEAR = (function(){
 
 
 /* --------------------------------------------------------------------------
+   PAD - handwriting.
+   A finger-drawn canvas on ruled guide lines, because the Friday test is
+   written by hand and letter formation is motor learning that typing does not
+   touch. Deliberately NOT recognised: handwriting OCR on a nine-year-old is
+   unreliable, and marking a correctly written word wrong would do real damage.
+   She writes it, the correct spelling appears to compare against, and she says
+   whether she got it - which is what Cover-Copy-Compare is on paper anyway.
+   -------------------------------------------------------------------------- */
+const PAD = (function(){
+  let cv = null, ctx = null, strokes = [], cur = null, W = 0, H = 0;
+
+  function guides(){
+    const top = H * 0.20, mid = H * 0.48, base = H * 0.76;
+    ctx.save();
+    ctx.strokeStyle = "#D8CFE8"; ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);        line(top);
+    ctx.strokeStyle = "#B9AED0"; ctx.lineWidth = 2;
+    line(base);                                   /* the line she writes on */
+    ctx.strokeStyle = "#E4DCF0"; ctx.lineWidth = 1.5;
+    ctx.setLineDash([7, 7]);    line(mid);        /* x-height */
+    ctx.restore();
+    function line(y){
+      ctx.beginPath(); ctx.moveTo(10, y); ctx.lineTo(W - 10, y); ctx.stroke();
+    }
+  }
+
+  function redraw(){
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+    guides();
+    ctx.strokeStyle = "#241F38"; ctx.lineWidth = 3.6;
+    ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.setLineDash([]);
+    strokes.forEach(draw);
+    if(cur) draw(cur);
+  }
+
+  /* quadratic through stroke midpoints, so a finger line comes out smooth */
+  function draw(pts){
+    if(pts.length < 2){
+      if(pts.length === 1){
+        ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, 1.9, 0, Math.PI * 2);
+        ctx.fillStyle = "#241F38"; ctx.fill();
+      }
+      return;
+    }
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i = 1; i < pts.length - 1; i++){
+      const mx = (pts[i].x + pts[i+1].x) / 2, my = (pts[i].y + pts[i+1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    ctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+    ctx.stroke();
+  }
+
+  function at(e){
+    const r = cv.getBoundingClientRect();
+    return {x:e.clientX - r.left, y:e.clientY - r.top};
+  }
+
+  function mount(canvas){
+    cv = canvas; ctx = cv.getContext("2d");
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const r = cv.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.scale(dpr, dpr);
+    strokes = []; cur = null;
+    redraw();
+
+    cv.addEventListener("pointerdown", function(e){
+      e.preventDefault();
+      try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+      cur = [at(e)]; redraw();
+    });
+    cv.addEventListener("pointermove", function(e){
+      if(!cur) return;
+      e.preventDefault();
+      cur.push(at(e)); redraw();
+    });
+    function end(e){
+      if(!cur) return;
+      if(cur.length) strokes.push(cur);
+      cur = null; redraw();
+    }
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+    cv.addEventListener("pointerleave", end);
+  }
+
+  function clear(){ strokes = []; cur = null; if(ctx) redraw(); }
+  function undo(){ strokes.pop(); if(ctx) redraw(); }
+  function isEmpty(){ return strokes.length === 0; }
+  function ink(){                       /* how much was actually drawn */
+    return strokes.reduce(function(n, s){ return n + s.length; }, 0);
+  }
+  /* small JPEG for the parent view; nothing full-size is ever stored */
+  function thumb(){
+    if(!cv) return "";
+    try{
+      const c = document.createElement("canvas");
+      const w = 300, h = Math.round(300 * (H / W));
+      c.width = w; c.height = h;
+      const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, w, h);
+      x.drawImage(cv, 0, 0, w, h);
+      return c.toDataURL("image/jpeg", 0.5);
+    }catch(e){ return ""; }
+  }
+  return {mount:mount, clear:clear, undo:undo, isEmpty:isEmpty, ink:ink, thumb:thumb};
+})();
+
+
+/* --------------------------------------------------------------------------
    SFX - short generated tones. No audio files, nothing to load.
    The "not yet" sound is deliberately gentle: an error here is information,
    not a punishment.
@@ -1161,7 +1288,7 @@ function blank(){
   return {
     v:1,
     profile:{name:"Emily", sessionSize:8, newPerSession:3, rate:0.82, sound:true, big:false,
-             hints:true, focusList:true, reviewOld:false, wholeList:false},
+             hints:true, focusList:true, reviewOld:false, wholeList:false, write:"optional"},
     lists:[], words:[], log:[], activeListId:"",
     gems:0, sprites:0, streak:0, lastPlayed:"", best:0
   };
@@ -1211,7 +1338,8 @@ function newWord(text, sentence, listId){
     id:uid(), listId:listId, text:text.trim(),
     sentence:(sentence || LEX.sentenceFor(text) || "").trim(),
     box:0, due:today(), seen:0, right:0, wrong:0, days:[],
-    created:today(), lastSeen:"", g3:false, g5:false, misses:[]
+    created:today(), lastSeen:"", g3:false, g5:false, misses:[],
+    wrote:0, wroteOk:0, shot:""
   };
 }
 function isMastered(w){ return w.box >= MASTER_BOX; }
@@ -1799,8 +1927,9 @@ function buildWholeList(){
    plus a fifth again for corrections and settling in. */
 const STAGE_SECS = {meet:45, fade:35, ccc:30, recall:30};
 function estimateMins(items){
+  const write = (DB.profile.write === "off") ? 0 : 25;
   let secs = 0;
-  items.forEach(function(it){ secs += STAGE_SECS[it.stage] || 30; });
+  items.forEach(function(it){ secs += (STAGE_SECS[it.stage] || 30) + write; });
   return Math.max(1, Math.round(secs * 1.2 / 60));
 }
 
@@ -1881,6 +2010,8 @@ RENDER.play = function(){
   if(S.phase === "ask")     return v.innerHTML = head + askCard(w, it), afterRender(w, it);
   if(S.phase === "judge")   return v.innerHTML = head + judgeCard(w, it), afterJudge(w, it);
   if(S.phase === "correct") return v.innerHTML = head + correctCard(w, it), afterRender(w, it, true);
+  if(S.phase === "write")   return v.innerHTML = head + writeCard(w, it), mountPad();
+  if(S.phase === "writeck") return v.innerHTML = head + writeCheckCard(w, it), void 0;
 };
 
 function askCard(w, it){
@@ -1946,7 +2077,8 @@ function judgeCard(w, it){
              '<div class="verdict yes">✓ Yes! That is exactly right.</div>' +
              '<div class="word xl" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
              (w.sentence ? '<p class="tiny">' + esc(w.sentence) + "</p>" : "") +
-             '<button class="btn go wide big" data-act="next" style="margin-top:12px">Next →</button>' +
+             '<button class="btn go wide big" data-act="next" style="margin-top:12px">' +
+               (writingOn() ? "Now write it →" : "Next →") + "</button>" +
            "</div>";
   }
   const ops = S.ops;
@@ -1977,6 +2109,43 @@ function correctCard(w){
              'autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="type it">' +
            '<button class="btn go wide big" data-act="submitfix" style="margin-top:12px">Check it</button>' +
          "</div>";
+}
+
+function writingOn(){ return DB.profile.write === "optional" || DB.profile.write === "required"; }
+function writingRequired(){ return DB.profile.write === "required"; }
+
+function writeCard(w, it){
+  return '<div class="card">' +
+           '<p class="tiny center" style="margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Now write it by hand</p>' +
+           (it.rewrite
+             ? '<div class="word lg" style="margin-bottom:10px">' + esc(w.text) + "</div>" +
+               '<p class="tiny center" style="margin:0 0 10px">Copy it once more, taking your time over each letter.</p>'
+             : '<p class="tiny center" style="margin:0 0 10px">Use your finger. Sit the letters on the dark line.</p>') +
+           '<canvas class="pad' + (writingRequired() ? " req" : "") + '" id="pad"></canvas>' +
+           '<div class="padbar">' +
+             '<button class="btn ghost sm" data-act="padundo">↶ Undo</button>' +
+             '<button class="btn ghost sm" data-act="padclear">Clear</button>' +
+           "</div>" +
+           '<button class="btn go wide big" data-act="wrotedone" style="margin-top:10px">Done — show me the word</button>' +
+           (writingRequired() ? "" :
+             '<button class="btn ghost wide" data-act="wroteskip" style="margin-top:8px">Skip writing this one</button>') +
+         "</div>";
+}
+
+function writeCheckCard(w, it){
+  return '<div class="card">' +
+           '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Compare them</p>' +
+           '<div class="model" style="margin-bottom:10px">' + esc(w.text) + "</div>" +
+           (S.shot ? '<img class="shot" src="' + S.shot + '" alt="what you wrote">' : "") +
+           '<p class="tiny center" style="margin:12px 0 10px">Did you write every letter correctly?</p>' +
+           '<button class="btn go wide big" data-act="wroteyes">Yes, it matches</button>' +
+           '<button class="btn ghost wide" data-act="wroteno" style="margin-top:8px">Not quite — let me write it again</button>' +
+         "</div>";
+}
+
+function mountPad(){
+  const c = el("pad");
+  if(c) setTimeout(function(){ PAD.mount(c); }, 20);
 }
 
 function afterRender(w, it, isFix){
@@ -2031,12 +2200,40 @@ function submitFix(){
      not yet learned. */
   const at = Math.min(S.items.length, S.i + 4);
   S.items.splice(at, 0, {wid:w.id, stage:"recall", retry:true});
+  toWriteOrNext();
+}
+
+/* Typing is graded; handwriting is the motor half. It comes after the spelling
+   is already correct, so she is only ever practising the right letters. */
+function toWriteOrNext(){
+  const it = S.items[S.i];
+  if(writingOn() && !it.wroteDone){
+    S.phase = "write"; S.shot = "";
+    SPEAK.stop();
+    RENDER.play();
+    return;
+  }
   nextItem();
 }
 function nextItem(){
   S.i++; S.phase = "ask"; S.attempt = ""; S.ops = null;
   SPEAK.stop();
   RENDER.play();
+}
+
+/* One small JPEG per word so a parent can see her letter formation. Storage is
+   finite, so if it will not fit, the samples go rather than the progress. */
+function keepShot(w, dataUrl){
+  if(!dataUrl) return;
+  const prev = w.shot;
+  w.shot = dataUrl;
+  try{
+    localStorage.setItem(KEY, JSON.stringify(DB));
+  }catch(e){
+    w.shot = prev;
+    DB.words.forEach(function(x){ x.shot = ""; });
+    try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e2){}
+  }
 }
 
 function recordMisses(w, ops){
@@ -2349,6 +2546,22 @@ function progressPane(){
   }
   h += "</div>";
 
+  const wrote = ws.filter(function(w){ return w.shot; });
+  if(wrote.length){
+    h += '<div class="card"><h3>Her handwriting</h3>' +
+         '<p class="tiny" style="margin-bottom:10px">The most recent attempt at each word, as she drew it. Look at letter formation — reversals and letters that float off the line are worth a word with her.</p>';
+    wrote.slice(-6).reverse().forEach(function(w){
+      h += '<div style="margin-bottom:12px">' +
+             '<div class="row spread" style="margin-bottom:4px">' +
+               "<b>" + esc(w.text) + "</b>" +
+               '<span class="tiny">' + w.wroteOk + " / " + w.wrote + " she judged correct</span>" +
+             "</div>" +
+             '<img class="shot" src="' + w.shot + '" alt="' + esc(w.text) + ' handwritten">' +
+           "</div>";
+    });
+    h += "</div>";
+  }
+
   h += '<div class="card"><h3>Print a practice test</h3>' +
        '<p class="tiny" style="margin-bottom:10px">Two pages: a numbered answer sheet for her, and a dictation sheet with the words and sentences for you. Writing by hand is still the form the school test takes.</p>' +
        '<select id="print-list" style="margin-bottom:10px">' +
@@ -2405,6 +2618,13 @@ function settingsPane(){
         '<input type="number" id="s-new" min="1" max="20" value="' + p.newPerSession + '">' +
         '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Three is a gentle ceiling for a child who finds spelling hard. Raise it to cover a list faster.</span></label>' +
     "</div>" +
+    '<label class="fld"><span>Handwriting</span>' +
+      '<select id="s-write">' +
+        '<option value="off"' + (p.write === "off" ? " selected" : "") + '>Off — typing only</option>' +
+        '<option value="optional"' + (p.write === "optional" ? " selected" : "") + '>Offered, but she can skip it</option>' +
+        '<option value="required"' + (p.write === "required" ? " selected" : "") + '>Required — every word must be written</option>' +
+      "</select>" +
+      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">After she spells a word correctly she writes it by hand on ruled lines, then compares it with the correct spelling. The test at school is handwritten, and forming the letters is practice typing cannot give her. Adds roughly 25 seconds a word.</span></label>' +
     '<label class="fld"><span>Reading speed</span>' +
       '<select id="s-rate">' +
         ["0.7|Slow","0.82|Normal","0.95|Quick"].map(function(o){
@@ -2610,7 +2830,49 @@ document.addEventListener("click", function(e){
     case "submit":   submitAnswer(); break;
     case "submitfix":submitFix(); break;
     case "fix":      S.phase = "correct"; RENDER.play(); break;
-    case "next":     nextItem(); break;
+    case "next":     toWriteOrNext(); break;
+    case "padundo":  PAD.undo(); break;
+    case "padclear": PAD.clear(); break;
+    case "wroteskip":
+      S.items[S.i].wroteDone = true;
+      nextItem();
+      break;
+    case "wrotedone": {
+      if(PAD.ink() < 8){
+        alert("Write the word on the line first — then tap Done.");
+        break;
+      }
+      S.shot = PAD.thumb();
+      S.phase = "writeck";
+      RENDER.play();
+      break;
+    }
+    case "wroteyes": {
+      const ww = wordById(S.items[S.i].wid);
+      ww.wrote++; ww.wroteOk++;
+      keepShot(ww, S.shot);
+      S.items[S.i].wroteDone = true;
+      S.wrote = (S.wrote || 0) + 1;
+      SFX.good(); save();
+      nextItem();
+      break;
+    }
+    case "wroteno": {
+      const wn = wordById(S.items[S.i].wid);
+      wn.wrote++;
+      keepShot(wn, S.shot);
+      S.wrote = (S.wrote || 0) + 1;
+      SFX.soft(); save();
+      if(S.items[S.i].rewrite){          /* one rewrite, then move on */
+        S.items[S.i].wroteDone = true;
+        nextItem();
+      }else{
+        S.items[S.i].rewrite = true;
+        S.phase = "write"; S.shot = "";
+        RENDER.play();
+      }
+      break;
+    }
     case "done":     endSession(); break;
     case "again":    startSession(); break;
     case "hear":     if(cur) SPEAK.dictate(cur.text, cur.sentence, {rate:DB.profile.rate}); break;
@@ -2631,6 +2893,7 @@ document.addEventListener("click", function(e){
       const p = DB.profile;
       p.name = el("s-name").value.trim();
       p.wholeList = el("s-mode").value === "whole";
+      p.write = el("s-write").value;
       p.sessionSize = Math.max(4, Math.min(30, +el("s-size").value || 8));
       p.newPerSession = Math.max(1, Math.min(20, +el("s-new").value || 3));
       p.rate = parseFloat(el("s-rate").value) || 0.82;

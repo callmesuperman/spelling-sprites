@@ -138,6 +138,43 @@ Gems are awarded when a word actually becomes durable — one when it reaches bo
 3, two more at mastery, one for finishing a session — and five gems hatch one of
 24 sprites. Rewards track real progress rather than time spent, on purpose.
 
+## Handwriting
+
+The test at school is written by hand, and forming letters is motor learning
+that typing does not touch. **Grown-ups → Settings → Handwriting** has three
+states:
+
+- **Off** — typing only.
+- **Offered, but she can skip it** — the default.
+- **Required** — every word must be written before the session moves on.
+
+It comes *after* she has already typed the word correctly, so she is only ever
+practising the right letters. She writes with a finger on ruled guide lines —
+top line, dashed x-height, a darker baseline to sit the letters on — then the
+correct spelling appears above what she drew and she says whether it matches.
+Saying "not quite" gives her one rewrite with the word visible to copy, then
+moves on rather than trapping her.
+
+**Her handwriting is deliberately not recognised.** OCR on a nine-year-old's
+writing is unreliable, and marking a correctly written word wrong would do real
+damage to a child who already finds spelling hard. Self-comparison against the
+correct form is the mechanism Cover-Copy-Compare uses on paper anyway.
+
+For the same reason the self-check does **not** move a word up or down its
+Leitner box — a child's self-report is not evidence, and the schedule stays
+driven by the typed answer, which is graded objectively. The self-checks are
+recorded and shown to you instead, under Grown-ups → Progress → *Her
+handwriting*, along with the most recent sample of each word as she drew it.
+Letter reversals and letters floating off the baseline are what to look for.
+
+Handwriting adds roughly 25 seconds a word, which the session estimate accounts
+for: a 20-word list is about 18 minutes typing only, and about 28 minutes with
+handwriting required. That is a long sitting — splitting it into two goes is
+usually better than pushing through.
+
+Samples are stored as small JPEGs, one per word, about 3 KB each. If the browser
+ever runs out of storage the samples are dropped rather than her progress.
+
 ## Weekly lists and the Friday test
 
 A list can carry a **test day** (it defaults to the coming Friday). That changes
@@ -182,8 +219,8 @@ These are summarised in-app under **Grown-ups → Method**.
 ## Notes for editing
 
 `index.html` has four sections, each behind a banner comment: CSS in `<style>`,
-then markup, then the modules (`LEX`, `ART`, `SPEAK`, `HEAR`, `SFX`, `OCR`),
-then the application logic.
+then markup, then the modules (`LEX`, `ART`, `PAD`, `SPEAK`, `HEAR`, `SFX`,
+`OCR`), then the application logic.
 
 - **Sprites are generated, not stored.** `ART` draws all 24 creatures with one
   renderer from the `SPRITES` parameter table — body shape, topper, pattern, eye
@@ -209,6 +246,10 @@ then the application logic.
   bossy-r test, so *teacher* and *water* do not end up in a list beside *star*
   and *first*. If you add patterns, err the same way: a wrong rule is worse than
   no rule.
+- **`PAD` stores strokes, not pixels.** Each stroke is an array of points and
+  the canvas is redrawn from them, which is what makes undo and the guide lines
+  work. Only a 300px JPEG is ever persisted, via `keepShot()`, which rolls back
+  and purges every sample if the write throws a quota error.
 - **`practicePool()` is the exclusivity guarantee.** Everything that chooses
   words — `dueWords()`, `freshWords()`, the session builder — goes through it,
   so there is one place to look if a word ever appears that should not have.
