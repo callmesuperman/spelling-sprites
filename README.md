@@ -75,6 +75,25 @@ session off this week's test, turn on **Also review older lists** in
 Grown-ups → Settings. It is off by default, because the weekly test is the
 thing that actually has a deadline.
 
+## How much each session covers
+
+**Grown-ups → Settings → Each session covers** has two modes.
+
+**The whole list, every time** is the classic weekly routine: all twelve words
+come up in every session, cover the list daily, test on Friday. Each word still
+appears at whatever level it has reached, so a word she has never met is
+introduced properly while one she nearly owns is straight dictation. Twelve
+words is roughly a six to nine minute session.
+
+**A few words at a time** is the adaptive default: the app picks what is due
+plus a few new ones. Gentler, but a twelve-word list takes several sessions to
+introduce, and the list screen will warn you when that runs past the test date.
+
+Either way the box rules are untouched — seeing a word more often does not
+promote it faster, because promotion past box 2 still requires a correct answer
+on a different day. Over a Monday-to-Friday week in whole-list mode a word
+reaches box 4; mastery lands the following Monday.
+
 ## How practice works
 
 Every word carries a Leitner box, 0 to 5. A session mixes words that are due
@@ -197,9 +216,11 @@ then the application logic.
 
 ## Settings worth knowing
 
-Under **Grown-ups → Settings**: her name, words per session, new words per
-session (three is a sensible ceiling for a child who finds spelling hard),
-reading speed, sound, rule hints, and larger text.
+Under **Grown-ups → Settings**: her name, how much each session covers, reading
+speed, sound, rule hints, whether to review older lists, and larger text. In the
+adaptive mode the two number fields underneath control session size and how many
+new words are introduced at once; they are hidden in whole-list mode because it
+uses neither.
 
 **Export regularly.** The data exists only in local storage, so clearing site
 data or browsing history wipes it.

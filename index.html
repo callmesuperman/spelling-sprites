@@ -1161,7 +1161,7 @@ function blank(){
   return {
     v:1,
     profile:{name:"Emily", sessionSize:8, newPerSession:3, rate:0.82, sound:true, big:false,
-             hints:true, focusList:true, reviewOld:false},
+             hints:true, focusList:true, reviewOld:false, wholeList:false},
     lists:[], words:[], log:[], activeListId:"",
     gems:0, sprites:0, streak:0, lastPlayed:"", best:0
   };
@@ -1397,7 +1397,8 @@ RENDER.home = function(){
     return;
   }
 
-  const ready = due + Math.min(fresh, DB.profile.newPerSession);
+  const ready = DB.profile.wholeList ? practicePool().length
+                                    : due + Math.min(fresh, DB.profile.newPerSession);
   const al = (DB.profile.focusList !== false && !DB.profile.reviewOld) ? activeList() : null;
   const nt = nextTest();
   let banner = "";
@@ -1422,7 +1423,8 @@ RENDER.home = function(){
         "<div class='grow'>" +
           "<h2 style='margin:0 0 4px'>" + (name ? "Ready, " + esc(name) + "?" : "Ready to practise?") + "</h2>" +
           '<p class="muted" style="margin:0">' +
-            (ready ? plural(ready, "word") + " lined up for today" : "Nothing due today — a bonus round is ready") +
+            (ready ? plural(ready, "word") + (DB.profile.wholeList ? " — the whole list" : " lined up for today")
+                   : "Nothing due today — a bonus round is ready") +
           "</p>" +
           (al ? '<p class="tiny" style="margin:5px 0 0">from <b>' + esc(al.title) + "</b>" +
                 (DB.lists.length > 1 ? ' \u00b7 <button data-act="switch" style="text-decoration:underline">change</button>' : "") +
@@ -1504,11 +1506,14 @@ function renderOneList(v){
     const d = l.testDate ? daysBetween(today(), l.testDate) : null;
     h += '<div class="note" style="margin-bottom:12px">' +
       (l.testDate && d >= 0 ? "<b>Test in " + plural(d, "day") + ".</b> " : "") +
-      (unseen ? "At " + DB.profile.newPerSession + " new words a session, this list takes " +
-                plural(sessions, "session") + " to introduce" +
-                (l.testDate && d >= 0 && sessions > d + 1 ?
-                  " — more than the days left. Raise <i>new words per session</i> in Grown-ups, or she will meet some of these for the first time on test day." :
-                  ".") : "All of these have been introduced.") +
+      (DB.profile.wholeList
+        ? "All " + plural(ws.length, "word") + " come up in every session."
+        : unseen ? "At " + DB.profile.newPerSession + " new words a session, this list takes " +
+                   plural(sessions, "session") + " to introduce" +
+                   (l.testDate && d >= 0 && sessions > d + 1 ?
+                     " — more than the days left. Switch <i>each session covers</i> to <i>the whole list</i> in Grown-ups, or raise <i>new words per session</i>, otherwise she meets some of these for the first time on test day." :
+                     ".")
+                 : "All of these have been introduced.") +
       "</div>";
   }
   h += '<div class="card flat" style="padding:10px 14px">';
@@ -1764,7 +1769,27 @@ function saveDraft(){
    ========================================================================== */
 let S = null;
 
+/* Every word on the list, every session.
+   The scaffold level still comes from each word's box, so a word she has never
+   met is introduced properly while one she nearly owns is straight dictation.
+   One encounter per word keeps the session about the length of a real spelling
+   practice; the box rules are untouched, so mastery still needs five separate
+   days and cannot be rushed by seeing everything more often. */
+function buildWholeList(){
+  const pool = practicePool().slice().sort(function(a, b){
+    return testIn(a) - testIn(b) || a.box - b.box;
+  });
+  if(!pool.length) return [];
+  return shuffle(pool.map(function(w){
+    return {wid:w.id, stage:w.seen === 0 ? "meet" : (w.box <= 2 ? "ccc" : "recall")};
+  }));
+}
+
 function buildSession(){
+  if(DB.profile.wholeList){
+    const all = buildWholeList();
+    if(all.length) return all;
+  }
   const size = DB.profile.sessionSize;
   const maxNew = DB.profile.newPerSession;
   const fresh = freshWords().slice(0, maxNew);
@@ -2344,11 +2369,23 @@ function settingsPane(){
   const p = DB.profile;
   return '<div class="card">' +
     '<label class="fld"><span>Her name</span><input type="text" id="s-name" value="' + esc(p.name) + '" placeholder="e.g. Nora"></label>' +
-    '<label class="fld"><span>Words per practice session</span>' +
-      '<input type="number" id="s-size" min="4" max="20" value="' + p.sessionSize + '"></label>' +
-    '<label class="fld"><span>New words introduced per session</span>' +
-      '<input type="number" id="s-new" min="1" max="8" value="' + p.newPerSession + '">' +
-      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Three is a good ceiling for a child who finds spelling hard. Too many new words at once and nothing sticks.</span></label>' +
+    '<label class="fld"><span>Each session covers</span>' +
+      '<select id="s-mode">' +
+        '<option value="few"' + (p.wholeList ? "" : " selected") + '>A few words at a time</option>' +
+        '<option value="whole"' + (p.wholeList ? " selected" : "") + '>The whole list, every time</option>' +
+      "</select>" +
+      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">' +
+      (p.wholeList
+        ? "All " + practicePool().length + " words on the list marked <i>practising</i> appear in every session, each at whatever level it has reached. This is the classic weekly routine \u2014 cover the list daily, test on Friday."
+        : "The app picks what is due plus a few new words. Gentler, but a 12-word list takes several sessions to introduce.") +
+      "</span></label>" +
+    '<div id="few-only"' + (p.wholeList ? ' style="display:none"' : "") + ">" +
+      '<label class="fld"><span>Words per practice session</span>' +
+        '<input type="number" id="s-size" min="4" max="30" value="' + p.sessionSize + '"></label>' +
+      '<label class="fld"><span>New words introduced per session</span>' +
+        '<input type="number" id="s-new" min="1" max="20" value="' + p.newPerSession + '">' +
+        '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Three is a gentle ceiling for a child who finds spelling hard. Raise it to cover a list faster.</span></label>' +
+    "</div>" +
     '<label class="fld"><span>Reading speed</span>' +
       '<select id="s-rate">' +
         ["0.7|Slow","0.82|Normal","0.95|Quick"].map(function(o){
@@ -2574,8 +2611,9 @@ document.addEventListener("click", function(e){
     case "savesettings": {
       const p = DB.profile;
       p.name = el("s-name").value.trim();
-      p.sessionSize = Math.max(4, Math.min(20, +el("s-size").value || 8));
-      p.newPerSession = Math.max(1, Math.min(8, +el("s-new").value || 3));
+      p.wholeList = el("s-mode").value === "whole";
+      p.sessionSize = Math.max(4, Math.min(30, +el("s-size").value || 8));
+      p.newPerSession = Math.max(1, Math.min(20, +el("s-new").value || 3));
       p.rate = parseFloat(el("s-rate").value) || 0.82;
       p.sound = el("s-sound").checked;
       p.hints = el("s-hints").checked;
@@ -2605,6 +2643,10 @@ document.addEventListener("keydown", function(e){
 
 document.addEventListener("change", function(e){
   if(e.target.id === "f-restore" && e.target.files[0]) doRestore(e.target.files[0]);
+  if(e.target.id === "s-mode"){
+    const box = el("few-only");
+    if(box) box.style.display = e.target.value === "whole" ? "none" : "";
+  }
 });
 
 /* --- boot ----------------------------------------------------------------- */
