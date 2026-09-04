@@ -79,11 +79,25 @@ thing that actually has a deadline.
 
 **Grown-ups → Settings → Each session covers** has two modes.
 
-**The whole list, every time** is the classic weekly routine: all twelve words
-come up in every session, cover the list daily, test on Friday. Each word still
-appears at whatever level it has reached, so a word she has never met is
-introduced properly while one she nearly owns is straight dictation. Twelve
-words is roughly a six to nine minute session.
+**The whole list, every time** is the classic weekly routine: every word on the
+list comes up in every session, cover the list daily, test on Friday. Each word
+still appears at whatever level it has reached, so a word she has never met is
+introduced properly while one she nearly owns is straight dictation.
+
+List length is not capped anywhere — 12, 20 or 30 words all work, and the home
+screen shows an estimate of how long the session will take so a long list is
+not a surprise. The first day is always the longest, because every word is
+being introduced; it drops by a third once they are familiar:
+
+| Words | First session | Later sessions |
+|-------|---------------|----------------|
+| 12    | ~11 min       | ~7 min         |
+| 20    | ~18 min       | ~12 min        |
+| 30    | ~27 min       | ~18 min        |
+
+Past about fifteen minutes the list screen suggests either splitting it into two
+goes with a break, or using the adaptive mode with *new words per session*
+raised instead. Both are fine; a long unbroken sitting is the thing to avoid.
 
 **A few words at a time** is the adaptive default: the app picks what is due
 plus a few new ones. Gentler, but a twelve-word list takes several sessions to

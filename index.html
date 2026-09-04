@@ -1400,6 +1400,7 @@ RENDER.home = function(){
   const ready = DB.profile.wholeList ? practicePool().length
                                     : due + Math.min(fresh, DB.profile.newPerSession);
   const al = (DB.profile.focusList !== false && !DB.profile.reviewOld) ? activeList() : null;
+  const mins = total ? estimateMins(buildSession()) : 0;
   const nt = nextTest();
   let banner = "";
   if(nt){
@@ -1423,7 +1424,8 @@ RENDER.home = function(){
         "<div class='grow'>" +
           "<h2 style='margin:0 0 4px'>" + (name ? "Ready, " + esc(name) + "?" : "Ready to practise?") + "</h2>" +
           '<p class="muted" style="margin:0">' +
-            (ready ? plural(ready, "word") + (DB.profile.wholeList ? " — the whole list" : " lined up for today")
+            (ready ? plural(ready, "word") + (DB.profile.wholeList ? " — the whole list" : " lined up for today") +
+                     (mins ? " · about " + mins + " min" : "")
                    : "Nothing due today — a bonus round is ready") +
           "</p>" +
           (al ? '<p class="tiny" style="margin:5px 0 0">from <b>' + esc(al.title) + "</b>" +
@@ -1497,6 +1499,9 @@ function renderOneList(v){
 
   const unseen = ws.filter(function(w){ return w.seen === 0; }).length;
   const sessions = Math.ceil(unseen / Math.max(1, DB.profile.newPerSession));
+  const wholeMins = estimateMins(ws.map(function(w){
+    return {stage: w.seen === 0 ? "meet" : (w.box <= 2 ? "ccc" : "recall")};
+  }));
   let h = '<div class="row" style="margin:6px 0 12px">' +
             '<button class="iconbtn" data-act="backlist">‹</button>' +
             "<h2 style='margin:0;flex:1'>" + esc(l.title) + "</h2>" +
@@ -1507,7 +1512,11 @@ function renderOneList(v){
     h += '<div class="note" style="margin-bottom:12px">' +
       (l.testDate && d >= 0 ? "<b>Test in " + plural(d, "day") + ".</b> " : "") +
       (DB.profile.wholeList
-        ? "All " + plural(ws.length, "word") + " come up in every session."
+        ? "All " + plural(ws.length, "word") + " come up in every session — about " +
+          wholeMins + " minutes" +
+          (wholeMins > 15
+            ? ". That is a long sitting for one go. Either split it into two goes with a break, or switch <i>each session covers</i> to <i>a few words at a time</i> and raise <i>new words per session</i> instead."
+            : ".")
         : unseen ? "At " + DB.profile.newPerSession + " new words a session, this list takes " +
                    plural(sessions, "session") + " to introduce" +
                    (l.testDate && d >= 0 && sessions > d + 1 ?
@@ -1783,6 +1792,16 @@ function buildWholeList(){
   return shuffle(pool.map(function(w){
     return {wid:w.id, stage:w.seen === 0 ? "meet" : (w.box <= 2 ? "ccc" : "recall")};
   }));
+}
+
+/* Roughly how long a session will take, so a 20-word list does not turn into a
+   surprise twenty-minute sitting. Seconds per card for a nine-year-old typing,
+   plus a fifth again for corrections and settling in. */
+const STAGE_SECS = {meet:45, fade:35, ccc:30, recall:30};
+function estimateMins(items){
+  let secs = 0;
+  items.forEach(function(it){ secs += STAGE_SECS[it.stage] || 30; });
+  return Math.max(1, Math.round(secs * 1.2 / 60));
 }
 
 function buildSession(){
