@@ -169,6 +169,45 @@ body.playing #tabs{display:none}
   font-size:clamp(26px,7.5vw,36px);
 }
 .shot{width:100%;border-radius:14px;border:1.5px solid var(--line);display:block;background:#fff}
+.turnhint{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  font-size:12.5px;color:var(--muted);font-weight:700;margin:0 0 8px;
+}
+
+/* Sideways on a phone the writing area goes two-column: the pad takes the whole
+   height on the left, the prompt and buttons sit beside it, so nothing needed
+   for finishing the word ends up below the fold. Portrait is unaffected. */
+@media (orientation:landscape) and (max-height:560px){
+  body.writing #topbar{display:none}
+  body.writing main{padding:0 10px}
+  body.writing #app{max-width:none}
+  body.writing .card{padding:8px 10px;margin:4px 0 0;border-radius:12px}
+  body.writing .turnhint{display:none}
+
+  body.writing .writegrid{
+    display:grid;
+    grid-template-columns:1fr minmax(170px,210px);
+    grid-template-areas:"pad head" "pad ctrl";
+    grid-template-rows:auto 1fr;
+    gap:6px 12px;
+  }
+  body.writing .w-head{grid-area:head;align-self:end}
+  body.writing .w-pad{grid-area:pad}
+  body.writing .w-ctrl{grid-area:ctrl;align-self:start}
+  body.writing .pad{height:calc(100dvh - 68px);min-height:150px}
+  body.writing .shot{max-height:calc(100dvh - 96px);object-fit:contain}
+  body.writing .askline{display:none}          /* the buttons already say it */
+  body.writing .w-ctrl .tiny{font-size:11.5px;line-height:1.35}
+  body.writing .verdict{padding:7px 8px;font-size:12px;line-height:1.35}
+  body.writing .w-ctrl .btn.big{min-height:40px;font-size:14px}
+  body.writing .w-ctrl .btn.wide{min-height:38px;font-size:13px;margin-top:5px !important}
+  body.writing .padbar{margin:0 0 6px}
+  body.writing .padbar .btn{min-height:36px;font-size:13px}
+  body.writing .btn.big{min-height:42px;font-size:15px}
+  body.writing .btn.wide{margin-top:6px !important}
+  body.writing .word.lg,body.writing .model{font-size:24px;margin-bottom:4px !important}
+  body.writing .verdict{padding:8px;font-size:13px;margin-bottom:6px}
+}
 
 /* --- progress --- */
 .bar{height:9px;background:var(--line);border-radius:99px;overflow:hidden}
@@ -1094,7 +1133,8 @@ const PAD = (function(){
   }
 
   /* quadratic through stroke midpoints, so a finger line comes out smooth */
-  function draw(pts){
+  function draw(norm){
+    const pts = norm.map(px);
     if(pts.length < 2){
       if(pts.length === 1){
         ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, 1.9, 0, Math.PI * 2);
@@ -1111,20 +1151,39 @@ const PAD = (function(){
     ctx.stroke();
   }
 
+  /* Strokes are stored 0..1 so turning the phone keeps what she has written. */
   function at(e){
     const r = cv.getBoundingClientRect();
-    return {x:e.clientX - r.left, y:e.clientY - r.top};
+    return {x:(e.clientX - r.left) / r.width, y:(e.clientY - r.top) / r.height};
   }
+  function px(p){ return {x:p.x * W, y:p.y * H}; }
+
+  function size(){
+    if(!cv) return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const r = cv.getBoundingClientRect();
+    if(!r.width || !r.height) return;
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+    redraw();
+  }
+
+  /* Turning the phone sideways gives a much bigger area to write in; the
+     canvas is re-measured and the strokes redrawn at the new size. */
+  function onResize(){ size(); }
 
   function mount(canvas){
     cv = canvas; ctx = cv.getContext("2d");
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const r = cv.getBoundingClientRect();
-    W = r.width; H = r.height;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    ctx.scale(dpr, dpr);
     strokes = []; cur = null;
-    redraw();
+    size();
+    window.removeEventListener("resize", onResize);
+    window.addEventListener("resize", onResize);
+    if(window.visualViewport){
+      window.visualViewport.removeEventListener("resize", onResize);
+      window.visualViewport.addEventListener("resize", onResize);
+    }
 
     cv.addEventListener("pointerdown", function(e){
       e.preventDefault();
@@ -1165,7 +1224,84 @@ const PAD = (function(){
       return c.toDataURL("image/jpeg", 0.5);
     }catch(e){ return ""; }
   }
-  return {mount:mount, clear:clear, undo:undo, isEmpty:isEmpty, ink:ink, thumb:thumb};
+  /* Automatic check on what she drew.
+     This does NOT read the word - there is no handwriting recognition in
+     Safari, and a model small enough to embed would misread a child's finger
+     writing often enough to be worse than useless. What the stroke geometry
+     CAN say reliably is how the letters were formed, which is the reason to
+     write by hand in the first place: how many letter shapes there are,
+     whether they sit on the line, and whether any are wildly out of size.
+     Findings are hints for her and evidence for a parent, never a grade. */
+  const BASE = 0.76, XTOP = 0.48;
+
+  function clusters(){
+    const boxes = strokes.map(function(st){
+      let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+      st.forEach(function(p){
+        if(p.x < x0) x0 = p.x; if(p.x > x1) x1 = p.x;
+        if(p.y < y0) y0 = p.y; if(p.y > y1) y1 = p.y;
+      });
+      return {x0:x0, x1:x1, y0:y0, y1:y1};
+    }).sort(function(a, b){ return a.x0 - b.x0; });
+
+    const out = [];
+    boxes.forEach(function(b){
+      const last = out[out.length - 1];
+      /* strokes that overlap horizontally, or nearly touch, are one letter -
+         which is how i, t and x get built from more than one stroke */
+      if(last && b.x0 <= last.x1 + 0.012){
+        last.x1 = Math.max(last.x1, b.x1);
+        last.y0 = Math.min(last.y0, b.y0);
+        last.y1 = Math.max(last.y1, b.y1);
+        last.n++;
+      }else{
+        out.push({x0:b.x0, x1:b.x1, y0:b.y0, y1:b.y1, n:1});
+      }
+    });
+    return out;
+  }
+
+  function analyse(word){
+    const letters = String(word || "").replace(/[^A-Za-z']/g, "").length;
+    const cl = clusters();
+    if(!cl.length) return {empty:true, shapes:0, letters:letters, notes:[], flags:[]};
+
+    const floating = cl.filter(function(c){ return c.y1 < BASE - 0.10; }).length;
+    const heights  = cl.map(function(c){ return c.y1 - c.y0; });
+    const median   = heights.slice().sort(function(a,b){ return a-b; })[Math.floor(heights.length/2)];
+    const outsized = cl.filter(function(c){
+      const h = c.y1 - c.y0;
+      return median > 0.04 && (h > median * 2.4 || h < median * 0.32);
+    }).length;
+
+    const notes = [], flags = [];
+    if(letters && cl.length < letters - 1){
+      notes.push("That looks like " + cl.length + " letter shapes, and this word needs " + letters + ". Count them as you write.");
+      flags.push("too-few");
+    }else if(letters && cl.length > letters + 2){
+      notes.push("That looks like more shapes than the word has letters — try leaving a small gap only between letters.");
+      flags.push("too-many");
+    }
+    if(floating >= Math.max(2, Math.ceil(cl.length * 0.4))){
+      notes.push("Some letters are floating above the line. Sit each one on the dark line.");
+      flags.push("off-line");
+    }
+    if(outsized >= 2){
+      notes.push("The letters are quite different sizes. Try to keep them even.");
+      flags.push("uneven");
+    }
+    if(!notes.length) notes.push("Letters look well formed — the right number of shapes, sitting on the line.");
+    return {empty:false, shapes:cl.length, letters:letters, floating:floating,
+            outsized:outsized, notes:notes, flags:flags, clean:flags.length === 0};
+  }
+
+  function unmount(){
+    window.removeEventListener("resize", onResize);
+    if(window.visualViewport) window.visualViewport.removeEventListener("resize", onResize);
+    cv = null; ctx = null; strokes = []; cur = null;
+  }
+  return {mount:mount, unmount:unmount, resize:size, clear:clear, undo:undo,
+          isEmpty:isEmpty, ink:ink, thumb:thumb, analyse:analyse};
 })();
 
 
@@ -1288,8 +1424,8 @@ function blank(){
   return {
     v:1,
     profile:{name:"Emily", sessionSize:8, newPerSession:3, rate:0.82, sound:true, big:false,
-             hints:true, focusList:true, reviewOld:false, wholeList:false, write:"optional"},
-    lists:[], words:[], log:[], activeListId:"",
+             hints:true, focusList:true, reviewOld:false, wholeList:false, write:"optional", reveal:"after"},
+    lists:[], words:[], log:[], activeListId:"", paused:null,
     gems:0, sprites:0, streak:0, lastPlayed:"", best:0
   };
 }
@@ -1339,7 +1475,7 @@ function newWord(text, sentence, listId){
     sentence:(sentence || LEX.sentenceFor(text) || "").trim(),
     box:0, due:today(), seen:0, right:0, wrong:0, days:[],
     created:today(), lastSeen:"", g3:false, g5:false, misses:[],
-    wrote:0, wroteOk:0, shot:""
+    wrote:0, wroteOk:0, shot:"", form:"", shapes:0
   };
 }
 function isMastered(w){ return w.box >= MASTER_BOX; }
@@ -1528,7 +1664,8 @@ RENDER.home = function(){
   const ready = DB.profile.wholeList ? practicePool().length
                                     : due + Math.min(fresh, DB.profile.newPerSession);
   const al = (DB.profile.focusList !== false && !DB.profile.reviewOld) ? activeList() : null;
-  const mins = total ? estimateMins(buildSession()) : 0;
+  const rp = resumable();
+  const mins = total ? (rp ? estimateMins(rp.items.slice(rp.i)) : estimateMins(buildSession())) : 0;
   const nt = nextTest();
   let banner = "";
   if(nt){
@@ -1552,7 +1689,9 @@ RENDER.home = function(){
         "<div class='grow'>" +
           "<h2 style='margin:0 0 4px'>" + (name ? "Ready, " + esc(name) + "?" : "Ready to practise?") + "</h2>" +
           '<p class="muted" style="margin:0">' +
-            (ready ? plural(ready, "word") + (DB.profile.wholeList ? " — the whole list" : " lined up for today") +
+            (rp ? plural(rp.items.length - rp.i, "word") + " left from last time" +
+                  (mins ? " · about " + mins + " min" : "")
+                : ready ? plural(ready, "word") + (DB.profile.wholeList ? " — the whole list" : " lined up for today") +
                      (mins ? " · about " + mins + " min" : "")
                    : "Nothing due today — a bonus round is ready") +
           "</p>" +
@@ -1562,7 +1701,12 @@ RENDER.home = function(){
         "</div>" +
         "<div style='width:74px;flex:none'>" + ART.draw(Math.max(0, DB.sprites - 1)) + "</div>" +
       "</div>" +
-      '<button class="btn wide big" data-act="play" style="margin-top:14px">▶︎ Start practice</button>' +
+      (rp
+      ? '<button class="btn go wide big" data-act="resume" style="margin-top:14px">▶︎ Carry on — ' +
+          plural(rp.items.length - rp.i, "word") + " left</button>" +
+        '<button class="btn ghost wide" data-act="freshstart" style="margin-top:8px">Start the list again instead</button>' +
+        '<p class="tiny center" style="margin:8px 0 0">You stopped after ' + plural(rp.doneSoFar || rp.i, "word") + " last time.</p>"
+      : '<button class="btn wide big" data-act="play" style="margin-top:14px">▶︎ Start practice</button>') +
     "</div>" +
 
     '<div class="card">' +
@@ -1918,6 +2062,7 @@ function buildWholeList(){
   });
   if(!pool.length) return [];
   return shuffle(pool.map(function(w){
+    if(!showFirst()) return {wid:w.id, stage:"recall"};
     return {wid:w.id, stage:w.seen === 0 ? "meet" : (w.box <= 2 ? "ccc" : "recall")};
   }));
 }
@@ -1960,30 +2105,78 @@ function buildSession(){
   if(!fresh.length && !due.length){
     /* nothing scheduled: a light refresher on the weakest words */
     const pool = words().slice().sort(function(a, b){ return a.box - b.box; }).slice(0, size);
-    items = pool.map(function(w){ return {wid:w.id, stage:w.box <= 2 ? "ccc" : "recall"}; });
+    items = pool.map(function(w){
+      return {wid:w.id, stage:(!showFirst() || w.box > 2) ? "recall" : "ccc"};
+    });
     return shuffle(items);
   }
 
-  const dueItems = due.map(function(w){ return {wid:w.id, stage:w.box <= 2 ? "ccc" : "recall"}; });
+  const dueItems = due.map(function(w){
+    return {wid:w.id, stage:(!showFirst() || w.box > 2) ? "recall" : "ccc"};
+  });
   const half = Math.ceil(dueItems.length / 2);
 
   /* Three spaced encounters per new word, with review words interleaved
      between them. Spacing inside the session, not just across days. */
-  const A = fresh.map(function(w){ return {wid:w.id, stage:"meet"}; });
-  const B = shuffle(fresh.map(function(w){ return {wid:w.id, stage:"fade"}; }).concat(dueItems.slice(0, half)));
+  const first  = showFirst() ? "meet" : "recall";
+  const second = showFirst() ? "fade" : "recall";
+  const A = fresh.map(function(w){ return {wid:w.id, stage:first}; });
+  const B = shuffle(fresh.map(function(w){ return {wid:w.id, stage:second}; }).concat(dueItems.slice(0, half)));
   const C = shuffle(fresh.map(function(w){ return {wid:w.id, stage:"recall"}; }).concat(dueItems.slice(half)));
   return A.concat(B, C);
+}
+
+/* Stopping part-way through is normal with a twenty-word list, so the rest of
+   the session is kept and picked up next time rather than thrown away. */
+function pauseSession(){
+  if(!S) return;
+  if(S.gems){ addGems(S.gems); }
+  touchStreak();
+  const done = S.i;
+  if(done){
+    DB.log.push({d:today(), n:S.right + S.wrong, right:S.right,
+                 sec:Math.round((Date.now() - S.start) / 1000), part:true});
+    if(DB.log.length > 400) DB.log = DB.log.slice(-400);
+  }
+  DB.paused = (S.i < S.items.length) ? {
+    items:S.items, i:S.i, right:S.right, wrong:S.wrong, wrote:S.wrote || 0,
+    listId:DB.activeListId, date:today(), doneSoFar:done, total:S.items.length
+  } : null;
+  save(); chrome();
+}
+
+function resumable(){
+  const p = DB.paused;
+  if(!p || !p.items || !p.items.length || p.i >= p.items.length) return null;
+  if(p.listId !== DB.activeListId) return null;      /* a new week starts fresh */
+  if(!p.items.some(function(it){ return wordById(it.wid); })) return null;
+  return p;
+}
+
+function resumeSession(){
+  const p = resumable();
+  if(!p){ startSession(); return; }
+  SPEAK.unlock(); SFX.unlock();
+  const items = p.items.filter(function(it){ return wordById(it.wid); });
+  S = {items:items, i:Math.min(p.i, items.length), right:p.right, wrong:p.wrong,
+       start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:"",
+       wrote:p.wrote || 0, resumed:true};
+  DB.paused = null; save();
+  document.body.classList.add("playing");
+  go("play");
 }
 
 function startSession(){
   if(!words().length){ startAdd(null); return; }
   SPEAK.unlock(); SFX.unlock();
-  S = {items:buildSession(), i:0, right:0, wrong:0, start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:""};
+  DB.paused = null;
+  S = {items:buildSession(), i:0, right:0, wrong:0, start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:"", wrote:0};
   if(!S.items.length){ S = null; alert("No words available yet."); return; }
   document.body.classList.add("playing");
   go("play");
 }
 function endSession(){
+  unmountPad();
   document.body.classList.remove("playing");
   SPEAK.stop();
   S = null;
@@ -2010,8 +2203,10 @@ RENDER.play = function(){
   if(S.phase === "ask")     return v.innerHTML = head + askCard(w, it), afterRender(w, it);
   if(S.phase === "judge")   return v.innerHTML = head + judgeCard(w, it), afterJudge(w, it);
   if(S.phase === "correct") return v.innerHTML = head + correctCard(w, it), afterRender(w, it, true);
+  if(S.phase === "pause")   return v.innerHTML = pauseCard();
   if(S.phase === "write")   return v.innerHTML = head + writeCard(w, it), mountPad();
-  if(S.phase === "writeck") return v.innerHTML = head + writeCheckCard(w, it), void 0;
+  if(S.phase === "writeck") return v.innerHTML = head + writeCheckCard(w, it),
+                                   void document.body.classList.add("writing");
 };
 
 function askCard(w, it){
@@ -2052,12 +2247,18 @@ function askCard(w, it){
   }
 
   if(it.stage === "recall"){
+    const firstEver = w.seen === 0;
     body =
-      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Listen and spell</p>' +
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">' +
+        (firstEver ? "New word — have a go" : "Listen and spell") + "</p>" +
       '<div class="center" style="font-size:52px;margin:6px 0 10px">🎧</div>' +
-      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:14px">' +
-        '<button class="btn ghost sm" data-act="hear">🔊 Say it again</button>' +
+      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:12px">' +
+        '<button class="btn go sm" data-act="hear">🔊 Hear it again</button>' +
+        '<button class="btn ghost sm" data-act="hearword">🔉 Just the word</button>' +
       "</div>" +
+      (firstEver
+        ? '<p class="tiny center" style="margin:0 0 12px">You have not seen this one yet. Take your best guess — the spelling comes up straight after.</p>'
+        : "") +
       (SPEAK.available() && !it.shown ?
         '<p class="center" style="margin:0 0 14px"><button class="tiny" data-act="reveal" style="text-decoration:underline">Can\'t hear it? Show me the word</button></p>' :
         '<div class="word lg" style="margin-bottom:14px">' + esc(w.text) + "</div>");
@@ -2072,23 +2273,29 @@ function askCard(w, it){
 
 function judgeCard(w, it){
   const ok = sameWord(S.attempt, w.text);
+  const ch = LEX.chunks(w.text);
+  const pats0 = LEX.patterns(w.text);
   if(ok){
     return '<div class="card center pop">' +
              '<div class="verdict yes">✓ Yes! That is exactly right.</div>' +
              '<div class="word xl" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
+             (ch.length > 1 ? '<div class="chips" style="margin-bottom:10px">' +
+                ch.map(function(c){ return '<span class="chip sm">' + esc(c) + "</span>"; }).join("") + "</div>" : "") +
              (w.sentence ? '<p class="tiny">' + esc(w.sentence) + "</p>" : "") +
              '<button class="btn go wide big" data-act="next" style="margin-top:12px">' +
                (writingOn() ? "Now write it →" : "Next →") + "</button>" +
            "</div>";
   }
   const ops = S.ops;
-  const pats = LEX.patterns(w.text);
+  const pats = pats0;
   return '<div class="card">' +
            '<div class="verdict no">Not yet — look at the difference</div>' +
            '<p class="tiny center" style="margin-bottom:2px">You wrote</p>' +
            '<div class="word lg" style="margin-bottom:12px">' + renderAttempt(ops) + "</div>" +
            '<p class="tiny center" style="margin-bottom:2px">The word is</p>' +
-           '<div class="word xl" style="margin-bottom:12px">' + renderTarget(ops) + "</div>" +
+           '<div class="word xl" style="margin-bottom:10px">' + renderTarget(ops) + "</div>" +
+           (ch.length > 1 ? '<div class="chips" style="margin-bottom:12px">' +
+              ch.map(function(c){ return '<span class="chip sm">' + esc(c) + "</span>"; }).join("") + "</div>" : "") +
            (DB.profile.hints && pats.length ?
              '<div class="note" style="margin-bottom:12px"><b>' + esc(pats[0].label) + ".</b> " + esc(pats[0].tip) + "</div>" : "") +
            '<div class="row" style="justify-content:center;margin-bottom:12px">' +
@@ -2111,41 +2318,74 @@ function correctCard(w){
          "</div>";
 }
 
+/* "after" means she never sees the word until she has had a go at it: she hears
+   it, spells it, and only then does the correct spelling appear. Attempting
+   first and being corrected immediately beats studying first - the pretesting
+   effect (Richland, Kornell & Kao, 2009) - and it is how the real test works.
+   "before" keeps the word on screen to copy, which is right for a child still
+   learning letter shapes rather than spellings. */
+function showFirst(){ return DB.profile.reveal === "before"; }
+
 function writingOn(){ return DB.profile.write === "optional" || DB.profile.write === "required"; }
 function writingRequired(){ return DB.profile.write === "required"; }
 
 function writeCard(w, it){
-  return '<div class="card">' +
-           '<p class="tiny center" style="margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Now write it by hand</p>' +
-           (it.rewrite
-             ? '<div class="word lg" style="margin-bottom:10px">' + esc(w.text) + "</div>" +
-               '<p class="tiny center" style="margin:0 0 10px">Copy it once more, taking your time over each letter.</p>'
-             : '<p class="tiny center" style="margin:0 0 10px">Use your finger. Sit the letters on the dark line.</p>') +
-           '<canvas class="pad' + (writingRequired() ? " req" : "") + '" id="pad"></canvas>' +
-           '<div class="padbar">' +
-             '<button class="btn ghost sm" data-act="padundo">↶ Undo</button>' +
-             '<button class="btn ghost sm" data-act="padclear">Clear</button>' +
+  return '<div class="card writegrid">' +
+           '<div class="w-head">' +
+             '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Now write it by hand</p>' +
+             (it.rewrite
+               ? '<div class="word lg" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
+                 '<p class="tiny center" style="margin:0 0 8px">Copy it once more, taking your time over each letter.</p>'
+               : '<p class="tiny center" style="margin:0 0 8px">Use your finger. Sit the letters on the dark line.</p>') +
+             '<p class="turnhint">📱 Turn your phone sideways for a bigger space to write</p>' +
            "</div>" +
-           '<button class="btn go wide big" data-act="wrotedone" style="margin-top:10px">Done — show me the word</button>' +
-           (writingRequired() ? "" :
-             '<button class="btn ghost wide" data-act="wroteskip" style="margin-top:8px">Skip writing this one</button>') +
+           '<div class="w-pad"><canvas class="pad' + (writingRequired() ? " req" : "") + '" id="pad"></canvas></div>' +
+           '<div class="w-ctrl">' +
+             '<div class="padbar" style="margin-top:10px">' +
+               '<button class="btn ghost sm" data-act="padundo">↶ Undo</button>' +
+               '<button class="btn ghost sm" data-act="padclear">Clear</button>' +
+             "</div>" +
+             '<button class="btn go wide big" data-act="wrotedone">Done — check it</button>' +
+             (writingRequired() ? "" :
+               '<button class="btn ghost wide" data-act="wroteskip" style="margin-top:8px">Skip writing this one</button>') +
+           "</div>" +
          "</div>";
 }
 
 function writeCheckCard(w, it){
-  return '<div class="card">' +
-           '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Compare them</p>' +
-           '<div class="model" style="margin-bottom:10px">' + esc(w.text) + "</div>" +
-           (S.shot ? '<img class="shot" src="' + S.shot + '" alt="what you wrote">' : "") +
-           '<p class="tiny center" style="margin:12px 0 10px">Did you write every letter correctly?</p>' +
+  const a = S.check;
+  const good = a && a.clean;
+  return '<div class="card writegrid">' +
+           '<div class="w-head">' +
+             '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Compare them</p>' +
+             '<div class="model" style="margin-bottom:10px">' + esc(w.text) + "</div>" +
+           "</div>" +
+           '<div class="w-pad">' +
+             (S.shot ? '<img class="shot" src="' + S.shot + '" alt="what you wrote">' : "") +
+           "</div>" +
+           '<div class="w-ctrl">' +
+           (a && !a.empty ?
+             '<div class="verdict ' + (good ? "yes" : "no") + '" style="margin:12px 0 4px;font-size:14px">' +
+               (good ? "✓ " : "") + esc(a.notes[0]) +
+             "</div>" +
+             (a.notes.length > 1 ? '<p class="tiny center" style="margin:0 0 4px">' + esc(a.notes[1]) + "</p>" : "") +
+             '<p class="tiny center" style="margin:6px 0 0;opacity:.75">' + a.shapes + " letter shapes counted" +
+               (a.letters ? " · " + esc(w.text) + " has " + a.letters : "") + "</p>" : "") +
+           '<p class="tiny center askline" style="margin:12px 0 10px">Now you look — did you write every letter correctly?</p>' +
            '<button class="btn go wide big" data-act="wroteyes">Yes, it matches</button>' +
            '<button class="btn ghost wide" data-act="wroteno" style="margin-top:8px">Not quite — let me write it again</button>' +
+           "</div>" +
          "</div>";
 }
 
 function mountPad(){
+  document.body.classList.add("writing");
   const c = el("pad");
   if(c) setTimeout(function(){ PAD.mount(c); }, 20);
+}
+function unmountPad(){
+  document.body.classList.remove("writing");
+  PAD.unmount();
 }
 
 function afterRender(w, it, isFix){
@@ -2216,6 +2456,7 @@ function toWriteOrNext(){
   nextItem();
 }
 function nextItem(){
+  unmountPad();
   S.i++; S.phase = "ask"; S.attempt = ""; S.ops = null;
   SPEAK.stop();
   RENDER.play();
@@ -2273,6 +2514,30 @@ function gradeWord(w, ok, stage, shown){
   save();
 }
 
+function pauseCard(){
+  const done = S.i, total = S.items.length, left = Math.max(0, total - done);
+  const tried = S.right + S.wrong;
+  const pct = tried ? Math.round(S.right / tried * 100) : 0;
+  const mins = Math.max(1, Math.round((Date.now() - S.start) / 60000));
+  return '<div class="card center pop" style="margin-top:16px">' +
+    "<h2 style='margin:2px 0 4px'>Nice work so far</h2>" +
+    '<p class="muted" style="margin:0 0 14px">' + plural(done, "word") + " done in " + mins + " min</p>" +
+    '<div class="stats" style="margin-bottom:14px">' +
+      '<div class="s"><b>' + S.right + "</b><span>right</span></div>" +
+      '<div class="s"><b>' + pct + "%</b><span>correct</span></div>" +
+      '<div class="s"><b>' + left + "</b><span>still to go</span></div>" +
+    "</div>" +
+    (left
+      ? '<p class="tiny" style="margin:0 0 12px">Stop here and the last ' + plural(left, "word") +
+        " will be waiting next time — you carry on from where you left off." +
+        (S.gems ? " Your " + plural(S.gems, "gem") + " are already banked." : "") + "</p>"
+      : '<p class="tiny" style="margin:0 0 12px">That is the whole list finished.</p>') +
+    '<button class="btn go wide big" data-act="keepgoing">Keep going</button>' +
+    '<button class="btn ghost wide" data-act="stopnow" style="margin-top:8px">' +
+      (left ? "Stop here — save the rest for later" : "Finish") + "</button>" +
+  "</div>";
+}
+
 function renderDone(v){
   const secs = Math.round((Date.now() - S.start) / 1000);
   const total = S.right + S.wrong;
@@ -2280,6 +2545,7 @@ function renderDone(v){
 
   if(!S.closed){
     S.closed = true;
+    DB.paused = null;
     S.gems += 1;                                    /* finishing counts */
     touchStreak();
     if(DB.streak > 0 && DB.streak % 7 === 0) S.gems += 3;
@@ -2556,6 +2822,11 @@ function progressPane(){
                "<b>" + esc(w.text) + "</b>" +
                '<span class="tiny">' + w.wroteOk + " / " + w.wrote + " she judged correct</span>" +
              "</div>" +
+             (w.form ? '<div class="tiny" style="margin:0 0 4px;color:var(--coral)">letter formation: ' +
+                esc(w.form.split(",").map(function(f){
+                  return {"too-few":"fewer shapes than letters", "too-many":"more shapes than letters",
+                          "off-line":"letters off the line", "uneven":"uneven sizes"}[f] || f;
+                }).join(", ")) + "</div>" : "") +
              '<img class="shot" src="' + w.shot + '" alt="' + esc(w.text) + ' handwritten">' +
            "</div>";
     });
@@ -2618,6 +2889,12 @@ function settingsPane(){
         '<input type="number" id="s-new" min="1" max="20" value="' + p.newPerSession + '">' +
         '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Three is a gentle ceiling for a child who finds spelling hard. Raise it to cover a list faster.</span></label>' +
     "</div>" +
+    '<label class="fld"><span>Before she spells a word</span>' +
+      '<select id="s-reveal">' +
+        '<option value="after"' + (p.reveal === "after" ? " selected" : "") + '>She only hears it — Grade 3 and up</option>' +
+        '<option value="before"' + (p.reveal === "before" ? " selected" : "") + '>Show her the word to copy — Kindergarten to Grade 2</option>' +
+      "</select>" +
+      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">Hearing it only is closer to the real test, and having a go before seeing the word makes the correction stick better than studying it first. Showing the word suits a child still learning letter shapes rather than spellings.</span></label>' +
     '<label class="fld"><span>Handwriting</span>' +
       '<select id="s-write">' +
         '<option value="off"' + (p.write === "off" ? " selected" : "") + '>Off — typing only</option>' +
@@ -2824,9 +3101,17 @@ document.addEventListener("click", function(e){
     }
 
     case "play":     startSession(); break;
+    case "resume":   resumeSession(); break;
+    case "freshstart":
+      if(confirm("Start the whole list again? The words you had left will be cleared.")){
+        DB.paused = null; save(); startSession();
+      }
+      break;
     case "sprint":   startSprint(); break;
     case "sort":     startSort(); break;
-    case "quit":     if(confirm("Stop practice? Progress so far is saved.")) endSession(); break;
+    case "quit":     if(S){ unmountPad(); S.phase = "pause"; RENDER.play(); } break;
+    case "keepgoing": S.phase = (S.i < S.items.length) ? "ask" : "pause"; RENDER.play(); break;
+    case "stopnow":  pauseSession(); endSession(); break;
     case "submit":   submitAnswer(); break;
     case "submitfix":submitFix(); break;
     case "fix":      S.phase = "correct"; RENDER.play(); break;
@@ -2843,6 +3128,7 @@ document.addEventListener("click", function(e){
         break;
       }
       S.shot = PAD.thumb();
+      S.check = PAD.analyse(wordById(S.items[S.i].wid).text);
       S.phase = "writeck";
       RENDER.play();
       break;
@@ -2850,6 +3136,8 @@ document.addEventListener("click", function(e){
     case "wroteyes": {
       const ww = wordById(S.items[S.i].wid);
       ww.wrote++; ww.wroteOk++;
+      ww.form = S.check ? S.check.flags.join(",") : "";
+      ww.shapes = S.check ? S.check.shapes : 0;
       keepShot(ww, S.shot);
       S.items[S.i].wroteDone = true;
       S.wrote = (S.wrote || 0) + 1;
@@ -2860,6 +3148,8 @@ document.addEventListener("click", function(e){
     case "wroteno": {
       const wn = wordById(S.items[S.i].wid);
       wn.wrote++;
+      wn.form = S.check ? S.check.flags.join(",") : "";
+      wn.shapes = S.check ? S.check.shapes : 0;
       keepShot(wn, S.shot);
       S.wrote = (S.wrote || 0) + 1;
       SFX.soft(); save();
@@ -2876,6 +3166,7 @@ document.addEventListener("click", function(e){
     case "done":     endSession(); break;
     case "again":    startSession(); break;
     case "hear":     if(cur) SPEAK.dictate(cur.text, cur.sentence, {rate:DB.profile.rate}); break;
+    case "hearword": if(cur) SPEAK.say([cur.text], {rate:Math.max(0.6, DB.profile.rate - 0.12)}); break;
     case "reveal":   if(S){ S.items[S.i].shown = true; RENDER.play(); } break;
     case "spell":    if(cur) SPEAK.spellOut(cur.text); break;
 
@@ -2894,6 +3185,7 @@ document.addEventListener("click", function(e){
       p.name = el("s-name").value.trim();
       p.wholeList = el("s-mode").value === "whole";
       p.write = el("s-write").value;
+      p.reveal = el("s-reveal").value;
       p.sessionSize = Math.max(4, Math.min(30, +el("s-size").value || 8));
       p.newPerSession = Math.max(1, Math.min(20, +el("s-new").value || 3));
       p.rate = parseFloat(el("s-rate").value) || 0.82;

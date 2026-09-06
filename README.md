@@ -114,12 +114,32 @@ Every word carries a Leitner box, 0 to 5. A session mixes words that are due
 with at most a few new ones, and the amount of support on screen depends on how
 well she knows the word:
 
+**Grown-ups → Settings → Before she spells a word** decides whether she ever
+sees it first.
+
+**She only hears it (Grade 3 and up, the default).** The word is never on screen
+before she attempts it. She hears it read in a sentence, can replay it — either
+the whole sentence or *just the word*, said slower — types her answer, and only
+then does the spelling appear. Attempting first and being corrected immediately
+beats studying first: the pretesting effect (Richland, Kornell & Kao, 2009)
+holds even when the first attempt is wrong, as long as the correction follows
+straight away, which it does. It is also simply how the real test works. A word
+she has never met is labelled *New word — have a go* and tells her the spelling
+comes up right after, so a wrong first guess is framed as expected rather than
+as failure.
+
+**Show her the word to copy (Kindergarten to Grade 2).** The older ladder, for a
+child still learning letter shapes rather than spellings:
+
 | Box | Stage | What she sees |
 |-----|-------|---------------|
 | new | Meet the word | Word, sound chunks, the spelling rule, read aloud — then she copies it |
 | new | Fill the gaps | Word with half its letters hidden |
 | 1–2 | Look, cover, write | Word shown for four seconds, then hidden |
 | 3+  | Listen and spell | Audio only — word, sentence, word again |
+
+Either way, the moment she has answered, the correct spelling appears along with
+its sound chunks and the rule behind it.
 
 Wrong answers are never just marked wrong. She sees her attempt with the wrong
 letters struck through, the correct word with the fixed letters highlighted, the
@@ -155,17 +175,37 @@ correct spelling appears above what she drew and she says whether it matches.
 Saying "not quite" gives her one rewrite with the word visible to copy, then
 moves on rather than trapping her.
 
-**Her handwriting is deliberately not recognised.** OCR on a nine-year-old's
-writing is unreliable, and marking a correctly written word wrong would do real
-damage to a child who already finds spelling hard. Self-comparison against the
-correct form is the mechanism Cover-Copy-Compare uses on paper anyway.
+**Turn the phone sideways for a much bigger area.** In landscape the writing
+screen becomes two columns — the pad takes the full height on the left, the
+prompt and buttons sit beside it — which is about 2.6x the writing area and a
+shape that actually suits a word. Strokes are stored as proportions rather than
+pixels, so rotating mid-word keeps what she has already written.
+
+**What the app checks automatically.** When she taps Done, the stroke geometry
+is analysed and she gets immediate feedback: how many separate letter shapes she
+drew versus how many letters the word has, whether the letters sit on the
+baseline or float above it, and whether any are wildly out of size. So writing
+three shapes for *caught* comes back as "That looks like 3 letter shapes, and
+this word needs 6. Count them as you write." The findings are also recorded per
+word for the parent view.
+
+**It does not read the word, and that is deliberate.** There is no handwriting
+recognition API in Safari, and a model small enough to embed would misread a
+child's finger-writing often enough to be worse than useless — marking a
+correctly written word wrong would do real damage to a child who already finds
+spelling hard. What stroke geometry *can* measure reliably is letter formation,
+which is the reason to write by hand in the first place. The final say stays
+with her own comparison against the correct spelling, which is the mechanism
+Cover-Copy-Compare uses on paper anyway.
 
 For the same reason the self-check does **not** move a word up or down its
 Leitner box — a child's self-report is not evidence, and the schedule stays
 driven by the typed answer, which is graded objectively. The self-checks are
 recorded and shown to you instead, under Grown-ups → Progress → *Her
-handwriting*, along with the most recent sample of each word as she drew it.
-Letter reversals and letters floating off the baseline are what to look for.
+handwriting*, along with the most recent sample of each word as she drew it and
+what the automatic check found — "fewer shapes than letters", "letters off the
+line", "uneven sizes". Letter reversals still need your eyes; the app cannot see
+those.
 
 Handwriting adds roughly 25 seconds a word, which the session estimate accounts
 for: a 20-word list is about 18 minutes typing only, and about 28 minutes with
@@ -174,6 +214,20 @@ usually better than pushing through.
 
 Samples are stored as small JPEGs, one per word, about 3 KB each. If the browser
 ever runs out of storage the samples are dropped rather than her progress.
+
+## Stopping part way through
+
+A twenty-word list is a long sitting, so a session does not have to be finished
+in one go. The ✕ during practice shows a score card — how many words she got
+through, how many she got right, how many are left — and offers **Keep going**
+or **Stop here**. Stopping banks the gems she has already earned, counts the day
+towards her streak, and saves the rest of the session.
+
+Next time, the home screen offers **Carry on — 7 words left** instead of Start
+practice, and picks up exactly where she stopped rather than restarting the
+list. *Start the list again instead* is there if you would rather. Finishing a
+list clears the saved remainder, and so does switching to a different week's
+list — a new week always starts fresh.
 
 ## Weekly lists and the Friday test
 
