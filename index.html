@@ -2072,7 +2072,7 @@ function buildWholeList(){
    plus a fifth again for corrections and settling in. */
 const STAGE_SECS = {meet:45, fade:35, ccc:30, recall:30};
 function estimateMins(items){
-  const write = (DB.profile.write === "off") ? 0 : 25;
+  const write = DB.profile.write === "off" ? 0 : (DB.profile.write === "before" ? 32 : 25);
   let secs = 0;
   items.forEach(function(it){ secs += (STAGE_SECS[it.stage] || 30) + write; });
   return Math.max(1, Math.round(secs * 1.2 / 60));
@@ -2158,9 +2158,11 @@ function resumeSession(){
   if(!p){ startSession(); return; }
   SPEAK.unlock(); SFX.unlock();
   const items = p.items.filter(function(it){ return wordById(it.wid); });
-  S = {items:items, i:Math.min(p.i, items.length), right:p.right, wrong:p.wrong,
-       start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:"",
-       wrote:p.wrote || 0, resumed:true};
+  const at = Math.min(p.i, items.length);
+  S = {items:items, i:at, right:p.right, wrong:p.wrong,
+       start:Date.now(), gems:0, hatched:false,
+       phase:(writeFirst() && items[at] && !items[at].wrotePre) ? "prewrite" : "ask",
+       ops:null, attempt:"", wrote:p.wrote || 0, resumed:true};
   DB.paused = null; save();
   document.body.classList.add("playing");
   go("play");
@@ -2170,7 +2172,8 @@ function startSession(){
   if(!words().length){ startAdd(null); return; }
   SPEAK.unlock(); SFX.unlock();
   DB.paused = null;
-  S = {items:buildSession(), i:0, right:0, wrong:0, start:Date.now(), gems:0, hatched:false, phase:"ask", ops:null, attempt:"", wrote:0};
+  S = {items:buildSession(), i:0, right:0, wrong:0, start:Date.now(), gems:0, hatched:false,
+       phase:writeFirst() ? "prewrite" : "ask", ops:null, attempt:"", wrote:0};
   if(!S.items.length){ S = null; alert("No words available yet."); return; }
   document.body.classList.add("playing");
   go("play");
@@ -2203,7 +2206,11 @@ RENDER.play = function(){
   if(S.phase === "ask")     return v.innerHTML = head + askCard(w, it), afterRender(w, it);
   if(S.phase === "judge")   return v.innerHTML = head + judgeCard(w, it), afterJudge(w, it);
   if(S.phase === "correct") return v.innerHTML = head + correctCard(w, it), afterRender(w, it, true);
-  if(S.phase === "pause")   return v.innerHTML = pauseCard();
+  if(S.phase === "pause")    return v.innerHTML = pauseCard();
+  if(S.phase === "prewrite") return v.innerHTML = head + writeCard(w, it, true),
+                                    (mountPad(), void setTimeout(function(){
+                                      SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate});
+                                    }, 260));
   if(S.phase === "write")   return v.innerHTML = head + writeCard(w, it), mountPad();
   if(S.phase === "writeck") return v.innerHTML = head + writeCheckCard(w, it),
                                    void document.body.classList.add("writing");
@@ -2326,17 +2333,28 @@ function correctCard(w){
    learning letter shapes rather than spellings. */
 function showFirst(){ return DB.profile.reveal === "before"; }
 
-function writingOn(){ return DB.profile.write === "optional" || DB.profile.write === "required"; }
-function writingRequired(){ return DB.profile.write === "required"; }
+function writingOn(){ return DB.profile.write !== "off"; }
+function writingRequired(){ return DB.profile.write === "required" || writeFirst(); }
+/* "before" makes the handwriting a real attempt rather than copying: she hears
+   the word, writes it from memory, then types the same word. The typed answer
+   is what gets graded, because it is the one that can be checked reliably. */
+function writeFirst(){ return DB.profile.write === "before"; }
 
-function writeCard(w, it){
+function writeCard(w, it, pre){
   return '<div class="card writegrid">' +
            '<div class="w-head">' +
-             '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">Now write it by hand</p>' +
-             (it.rewrite
-               ? '<div class="word lg" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
-                 '<p class="tiny center" style="margin:0 0 8px">Copy it once more, taking your time over each letter.</p>'
-               : '<p class="tiny center" style="margin:0 0 8px">Use your finger. Sit the letters on the dark line.</p>') +
+             '<p class="tiny center" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">' +
+               (pre ? "Listen, then write it" : "Now write it by hand") + "</p>" +
+             (pre
+               ? '<div class="row" style="justify-content:center;gap:6px;margin-bottom:8px">' +
+                   '<button class="btn go sm" data-act="hear">🔊 Hear it</button>' +
+                   '<button class="btn ghost sm" data-act="hearword">🔉 Just the word</button>' +
+                 "</div>" +
+                 '<p class="tiny center" style="margin:0 0 8px">Write it from memory. You will type it next.</p>'
+               : it.rewrite
+                 ? '<div class="word lg" style="margin-bottom:8px">' + esc(w.text) + "</div>" +
+                   '<p class="tiny center" style="margin:0 0 8px">Copy it once more, taking your time over each letter.</p>'
+                 : '<p class="tiny center" style="margin:0 0 8px">Use your finger. Sit the letters on the dark line.</p>') +
              '<p class="turnhint">📱 Turn your phone sideways for a bigger space to write</p>' +
            "</div>" +
            '<div class="w-pad"><canvas class="pad' + (writingRequired() ? " req" : "") + '" id="pad"></canvas></div>' +
@@ -2345,7 +2363,8 @@ function writeCard(w, it){
                '<button class="btn ghost sm" data-act="padundo">↶ Undo</button>' +
                '<button class="btn ghost sm" data-act="padclear">Clear</button>' +
              "</div>" +
-             '<button class="btn go wide big" data-act="wrotedone">Done — check it</button>' +
+             '<button class="btn go wide big" data-act="wrotedone">' +
+               (pre ? "Done — now type it" : "Done — check it") + "</button>" +
              (writingRequired() ? "" :
                '<button class="btn ghost wide" data-act="wroteskip" style="margin-top:8px">Skip writing this one</button>') +
            "</div>" +
@@ -2447,17 +2466,22 @@ function submitFix(){
    is already correct, so she is only ever practising the right letters. */
 function toWriteOrNext(){
   const it = S.items[S.i];
-  if(writingOn() && !it.wroteDone){
+  if(!writingOn() || it.wroteDone){ nextItem(); return; }
+  SPEAK.stop();
+  if(writeFirst()){
+    /* she wrote it before typing; now she can see the correct spelling and
+       check her own writing against it */
+    S.phase = it.wrotePre ? "writeck" : "prewrite";
+  }else{
     S.phase = "write"; S.shot = "";
-    SPEAK.stop();
-    RENDER.play();
-    return;
   }
-  nextItem();
+  RENDER.play();
 }
 function nextItem(){
   unmountPad();
-  S.i++; S.phase = "ask"; S.attempt = ""; S.ops = null;
+  S.i++; S.attempt = ""; S.ops = null; S.shot = ""; S.check = null;
+  const nx = S.items[S.i];
+  S.phase = (writeFirst() && nx && !nx.wrotePre) ? "prewrite" : "ask";
   SPEAK.stop();
   RENDER.play();
 }
@@ -2899,9 +2923,10 @@ function settingsPane(){
       '<select id="s-write">' +
         '<option value="off"' + (p.write === "off" ? " selected" : "") + '>Off — typing only</option>' +
         '<option value="optional"' + (p.write === "optional" ? " selected" : "") + '>Offered, but she can skip it</option>' +
-        '<option value="required"' + (p.write === "required" ? " selected" : "") + '>Required — every word must be written</option>' +
+        '<option value="required"' + (p.write === "required" ? " selected" : "") + '>Required — type it, then write it</option>' +
+        '<option value="before"' + (p.write === "before" ? " selected" : "") + '>Required — write it first, then type it</option>' +
       "</select>" +
-      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">After she spells a word correctly she writes it by hand on ruled lines, then compares it with the correct spelling. The test at school is handwritten, and forming the letters is practice typing cannot give her. Adds roughly 25 seconds a word.</span></label>' +
+      '<span class="tiny" style="font-weight:600;margin-top:4px;display:block">The test at school is handwritten, and forming letters is practice typing cannot give her. <b>Type it, then write it</b> means she only ever writes a spelling she has already got right. <b>Write it first</b> makes the handwriting a real attempt from memory — closest to the real test — and the typed answer is still what gets marked, because that is the one that can be checked reliably. Adds roughly 25 seconds a word.</span></label>' +
     '<label class="fld"><span>Reading speed</span>' +
       '<select id="s-rate">' +
         ["0.7|Slow","0.82|Normal","0.95|Quick"].map(function(o){
@@ -3129,7 +3154,13 @@ document.addEventListener("click", function(e){
       }
       S.shot = PAD.thumb();
       S.check = PAD.analyse(wordById(S.items[S.i].wid).text);
-      S.phase = "writeck";
+      if(S.phase === "prewrite"){
+        S.items[S.i].wrotePre = true;       /* kept, compared after she has typed */
+        unmountPad();
+        S.phase = "ask";
+      }else{
+        S.phase = "writeck";
+      }
       RENDER.play();
       break;
     }
@@ -3158,7 +3189,7 @@ document.addEventListener("click", function(e){
         nextItem();
       }else{
         S.items[S.i].rewrite = true;
-        S.phase = "write"; S.shot = "";
+        S.phase = "write"; S.shot = "";   /* word is on screen now, so it is a copy */
         RENDER.play();
       }
       break;

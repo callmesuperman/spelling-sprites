@@ -166,7 +166,13 @@ states:
 
 - **Off** — typing only.
 - **Offered, but she can skip it** — the default.
-- **Required** — every word must be written before the session moves on.
+- **Required — type it, then write it** — she writes a spelling she has already
+  got right, so the pen never practises a mistake.
+- **Required — write it first, then type it** — she hears the word, writes it
+  from memory, then types the same word. Closest to the real test: the writing
+  is a genuine attempt rather than copying. The typed answer is still what gets
+  marked, because it is the one that can be checked reliably, and the correct
+  spelling appears afterwards so she can compare her writing against it.
 
 It comes *after* she has already typed the word correctly, so she is only ever
 practising the right letters. She writes with a finger on ruled guide lines —
@@ -189,9 +195,17 @@ three shapes for *caught* comes back as "That looks like 3 letter shapes, and
 this word needs 6. Count them as you write." The findings are also recorded per
 word for the parent view.
 
-**It does not read the word, and that is deliberate.** There is no handwriting
-recognition API in Safari, and a model small enough to embed would misread a
-child's finger-writing often enough to be worse than useless — marking a
+**It does not read the word, and no browser choice changes that.** Every browser
+on iOS — Chrome and Firefox included — is required to use Apple's WebKit engine,
+so they all expose exactly the same web APIs as Safari. The W3C Handwriting
+Recognition API is a Chromium feature and is not available in any iOS browser;
+switching browsers would gain nothing and would cost the clean Add to Home
+Screen install, which is a Safari strength. Cloud recognition (Google Vision,
+Azure, MyScript) would work but needs an API key, and in a single client-side
+file that key is public to anyone who views source — it would also mean sending
+a child's handwriting to a third party and running a proxy server to hide the
+key, which is the whole no-server design gone. A model small enough to embed
+would misread a child's finger-writing often enough to be worse than useless — marking a
 correctly written word wrong would do real damage to a child who already finds
 spelling hard. What stroke geometry *can* measure reliably is letter formation,
 which is the reason to write by hand in the first place. The final say stays
@@ -207,8 +221,8 @@ what the automatic check found — "fewer shapes than letters", "letters off the
 line", "uneven sizes". Letter reversals still need your eyes; the app cannot see
 those.
 
-Handwriting adds roughly 25 seconds a word, which the session estimate accounts
-for: a 20-word list is about 18 minutes typing only, and about 28 minutes with
+Handwriting adds roughly 25 seconds a word (32 when she writes first), which the
+session estimate accounts for: a 20-word list is about 18 minutes typing only, and about 28 minutes with
 handwriting required. That is a long sitting — splitting it into two goes is
 usually better than pushing through.
 
