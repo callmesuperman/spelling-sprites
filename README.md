@@ -152,10 +152,22 @@ on separate days and cannot be manufactured in one long sitting.
 
 ## Games, stars and badges
 
-Three side games sit alongside practice:
+A **Daily Challenge** sits at the top of the home screen: five words, no help,
+once a day, for bonus gems and its own streak. It is unaided recall — audio
+only, typed from memory — so unlike the tile games it *does* count towards the
+schedule. Once done, the card turns into a tick and the streak until tomorrow.
+Consecutive days build the streak; a missed day resets it.
+
+Four side games sit alongside practice:
 
 - **Word Scramble** — the letters of the word, mixed up as tiles, to be tapped
   back into order. Three stars first try, one after a retry.
+- **Missing Letters** — the word with two or three letters taken out. *Which*
+  letters get taken out is the point: the app records the letters she actually
+  gets wrong, word by word, and blanks those first, falling back to double
+  letters, vowel teams and silent e when a word has no error history yet. Two
+  decoy letters join the tray so it is not a free guess, and the end screen says
+  how many of the words were aimed at her own tricky letters.
 - **Speed Sprint** — 60-second fluency round on words she already owns.
 - **Pattern Sort** — group words by the spelling rule they follow. Needs at
   least two rules represented, so it declines a single-rule list.
@@ -171,15 +183,16 @@ knows.
 clean session, two per word in Speed Sprint, three per scramble. They buy
 nothing that pretends to be mastery.
 
-**🏅 Badges** mark milestones — First Word, Clean Sweep, Three Days, Whole Week,
-Five Mastered, Twenty Mastered, Unscrambler, Quick Fingers, Neat Writer, List
-Finished, Star Collector. Twelve in all, on a shelf under **Sprites**.
+**🏅 Badges** mark milestones — First Word, Ten Right, Clean Sweep, Three Days,
+Whole Week, Five Mastered, Twenty Mastered, Unscrambler, Gap Filler, Quick
+Fingers, Five Days Running, Neat Writer, List Finished, Star Collector. Fourteen
+in all, on a shelf under **Sprites**.
 
-**Scramble does not move a word along its Leitner box, on purpose.** Handing her
-the exact letter set and the word length makes it far easier than spelling from
-memory, and a week of scrambles would otherwise look like mastery it has not
-earned. It pays in stars instead. Speed Sprint *does* count, because that is
-unaided recall.
+**Scramble and Missing Letters do not move a word along its Leitner box, on
+purpose.** Handing her the letter set, or most of the word, makes them far
+easier than spelling from memory, and a week of them would otherwise look like
+mastery they have not earned. They pay in stars instead. **Speed Sprint and the
+Daily Challenge do count**, because both are unaided recall.
 
 A wrong arrangement is never left standing: the moment she checks, the slots
 turn green or red against the correct spelling and the real word is shown before

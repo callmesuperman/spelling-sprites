@@ -1457,7 +1457,7 @@ function blank(){
              hints:true, focusList:true, reviewOld:false, wholeList:false, write:"optional", reveal:"after"},
     lists:[], words:[], log:[], activeListId:"", paused:null,
     gems:0, sprites:0, streak:0, lastPlayed:"", best:0,
-    stars:0, badges:[], flags:{}
+    stars:0, badges:[], flags:{}, daily:null
   };
 }
 let DB = blank();
@@ -1612,6 +1612,10 @@ const BADGES = [
        return ws.length >= 5 && ws.every(isMastered);
      });
    }},
+  {id:"gaps",    ic:"🕳", n:"Gap Filler",   d:"Win a whole Missing Letters round",
+   t:function(){ return !!DB.flags.missing; }},
+  {id:"daily5",  ic:"🎯", n:"Five Days Running", d:"Do the Daily Challenge 5 days in a row",
+   t:function(){ return !!DB.flags.daily5; }},
   {id:"stars",   ic:"💫", n:"Star Collector", d:"Earn 200 stars",
    t:function(){ return (DB.stars || 0) >= 200; }}
 ];
@@ -1750,6 +1754,7 @@ RENDER.home = function(){
   const ready = DB.profile.wholeList ? practicePool().length
                                     : due + Math.min(fresh, DB.profile.newPerSession);
   const al = (DB.profile.focusList !== false && !DB.profile.reviewOld) ? activeList() : null;
+  const pool0 = practicePool().length;
   const rp = resumable();
   const mins = total ? (rp ? estimateMins(rp.items.slice(rp.i)) : estimateMins(buildSession())) : 0;
   const nt = nextTest();
@@ -1769,7 +1774,21 @@ RENDER.home = function(){
                     " still shaky. Practice puts those first until the test.</p>" : "") +
       "</div>";
   }
-  v.innerHTML = banner +
+  const dailyCard = pool0
+    ? (dailyDone()
+        ? '<div class="card" style="background:var(--teal-soft);border-color:transparent">' +
+            '<div class="row spread"><b>🎯 Daily Challenge done ✓</b>' +
+            '<span class="tiny">' + plural(dailyStreak(), "day") + " running</span></div>" +
+            '<p class="tiny" style="margin:6px 0 0">Come back tomorrow to keep the streak.</p>' +
+          "</div>"
+        : '<div class="card" style="background:var(--gold-soft);border-color:transparent">' +
+            '<div class="row spread" style="margin-bottom:8px"><b>🎯 Daily Challenge</b>' +
+            (dailyStreak() ? '<span class="tiny">' + plural(dailyStreak(), "day") + " running</span>" : "") + "</div>" +
+            '<p class="tiny" style="margin:0 0 10px">Five words, no help, once a day. Worth bonus gems.</p>' +
+            '<button class="btn wide" data-act="daily">Take today\'s challenge</button>' +
+          "</div>")
+    : "";
+  v.innerHTML = banner + dailyCard +
     '<div class="card">' +
       '<div class="row spread" style="align-items:flex-start">' +
         "<div class='grow'>" +
@@ -1814,6 +1833,7 @@ RENDER.home = function(){
     '<div class="card flat" style="padding:10px">' +
       '<button class="btn ghost wide" data-act="sprint" style="justify-content:flex-start;margin-bottom:8px">⚡️ Speed Sprint <span class="tiny" style="font-weight:600">— beat the clock on words you know</span></button>' +
       '<button class="btn ghost wide" data-act="scramble" style="justify-content:flex-start;margin-bottom:8px">🔤 Word Scramble <span class="tiny" style="font-weight:600">— put the mixed-up letters back in order</span></button>' +
+      '<button class="btn ghost wide" data-act="missing" style="justify-content:flex-start;margin-bottom:8px">🕳 Missing Letters <span class="tiny" style="font-weight:600">— fill the gaps, aimed at your tricky letters</span></button>' +
       '<button class="btn ghost wide" data-act="sort" style="justify-content:flex-start">🧩 Pattern Sort <span class="tiny" style="font-weight:600">— group words by their spelling rule</span></button>' +
     "</div>";
 };
@@ -3029,6 +3049,333 @@ function scramNext(){
 }
 
 /* ==========================================================================
+   MISSING LETTERS - the word with a few letters taken out, for her to put back.
+   The point is which letters get taken out: the app already records the letters
+   she actually gets wrong, word by word, so it blanks those first. Practice
+   aimed at her own errors rather than at random gaps.
+   Most of the word is on screen, so like Scramble this pays stars and does not
+   move a word along its Leitner box.
+   ========================================================================== */
+let ML = null;
+
+/* letters this word has cost her before, from the recorded misses */
+function weakLetters(w){
+  const tally = {};
+  (w.misses || []).forEach(function(m){
+    let ch = "";
+    if(m.indexOf("missed ") === 0) ch = m.slice(7);
+    else if(m.indexOf("→") > 0)    ch = m.split("→")[0];
+    ch = String(ch || "").toLowerCase();
+    if(ch.length === 1) tally[ch] = (tally[ch] || 0) + 1;
+  });
+  return tally;
+}
+
+/* Which positions to blank: her own errors first, then the letters that trip
+   most children up, then anything left. */
+function blankPlan(w, n){
+  const text = w.text, low = text.toLowerCase();
+  const weak = weakLetters(w);
+  const scored = [];
+  for(let i = 0; i < text.length; i++){
+    const c = low[i];
+    if(!/[a-z]/.test(c)) continue;
+    let score = 0;
+    if(weak[c]) score += 100 + weak[c] * 10;              /* her actual mistakes */
+    if(i > 0 && low[i] === low[i-1]) score += 40;          /* double letters */
+    if(i < low.length-1 && low[i] === low[i+1]) score += 40;
+    if("aeiou".indexOf(c) >= 0) score += 20;               /* vowels carry the choices */
+    if(i > 0 && "aeiou".indexOf(low[i-1]) >= 0 && "aeiou".indexOf(c) >= 0) score += 25;
+    if(i === low.length - 1 && c === "e") score += 30;     /* silent e */
+    if("kwgh".indexOf(c) >= 0 && i === 0) score += 25;     /* kn, wr, gn, gh */
+    score += Math.random() * 8;                            /* break ties differently each time */
+    scored.push({i:i, score:score});
+  }
+  scored.sort(function(a, b){ return b.score - a.score; });
+  const take = Math.max(1, Math.min(n, Math.max(1, Math.floor(text.length / 2))));
+  return scored.slice(0, take).map(function(x){ return x.i; }).sort(function(a, b){ return a - b; });
+}
+
+function startMissing(){
+  const pool = practicePool().filter(function(w){ return w.text.length >= 4; });
+  if(pool.length < 3){
+    alert("Missing Letters needs at least three words of four letters or more on the list.");
+    return;
+  }
+  SPEAK.unlock(); SFX.unlock();
+  ML = {pool:shuffle(pool.slice()).slice(0, 8), i:0, right:0, stars:0, done:false, targeted:0};
+  loadMissing();
+  document.body.classList.add("playing");
+  RENDER.play = renderMissing;
+  go("play");
+}
+function loadMissing(){
+  const w = ML.pool[ML.i];
+  ML.word = w;
+  ML.blanks = blankPlan(w, w.text.length <= 5 ? 2 : 3);
+  if(Object.keys(weakLetters(w)).length) ML.targeted++;
+  ML.fill = {};
+  ML.blanks.forEach(function(i){ ML.fill[i] = null; });
+
+  /* the missing letters, plus two decoys so it is not a free guess */
+  const need = ML.blanks.map(function(i){ return w.text[i]; });
+  const alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
+  const decoys = shuffle(alphabet.filter(function(c){
+    return need.join("").toLowerCase().indexOf(c) < 0;
+  })).slice(0, 2);
+  ML.tiles = shuffle(need.concat(decoys)).map(function(ch, k){
+    return {ch:ch, id:k, used:false};
+  });
+  ML.state = "build";
+  ML.tries = 0;
+}
+function endMissing(){
+  ML = null;
+  RENDER.play = playRenderer;
+  document.body.classList.remove("playing");
+  SPEAK.stop();
+  go("home");
+}
+
+function renderMissing(){
+  const v = el("v-play");
+  if(!ML) return;
+
+  if(ML.done){
+    if(!ML.closed){
+      ML.closed = true;
+      addStars(ML.stars);
+      if(ML.right === ML.pool.length) DB.flags.missing = true;
+      save();
+      const won = checkBadges();
+      ML.badge = won[0] || null;
+      chrome(); SFX.hatch();
+    }
+    v.innerHTML = '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 6px'>Gaps filled!</h2>" +
+      '<p class="muted">' + ML.right + " of " + ML.pool.length + " right.</p>" +
+      '<div class="stats" style="margin:12px 0">' +
+        '<div class="s"><b>+' + ML.stars + "</b><span>stars</span></div>" +
+        '<div class="s"><b>' + ML.right + "</b><span>right</span></div>" +
+        '<div class="s"><b>' + ML.targeted + "</b><span>on your tricky letters</span></div>" +
+      "</div>" +
+      (ML.badge ? '<div class="card flat" style="background:var(--gold-soft);border-color:transparent;margin:0 0 12px">' +
+        '<div style="font-size:34px">' + ML.badge.ic + "</div><b>Badge earned: " + esc(ML.badge.n) + "</b>" +
+        '<p class="tiny" style="margin:4px 0 0">' + esc(ML.badge.d) + "</p></div>" : "") +
+      '<button class="btn go wide big" data-act="mldone">Done</button>' +
+      '<button class="btn ghost wide" data-act="mlagain" style="margin-top:8px">Play again</button>' +
+    "</div>";
+    return;
+  }
+
+  const w = ML.word, judged = ML.state === "judged";
+  const filled = ML.blanks.every(function(i){ return ML.fill[i]; });
+  const guess = w.text.split("").map(function(c, i){
+    if(ML.blanks.indexOf(i) < 0) return c;
+    return ML.fill[i] ? ML.fill[i].ch : "";
+  }).join("");
+  const ok = judged && sameWord(guess, w.text);
+
+  v.innerHTML =
+    '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="mldone" aria-label="Stop">✕</button>' +
+      '<div class="grow"><div class="bar"><i style="width:' + (ML.i / ML.pool.length * 100) + '%"></i></div></div>' +
+      '<span class="tiny">⭐ ' + ML.stars + "</span>" +
+    "</div>" +
+    '<div class="card center">' +
+      '<p class="tiny" style="margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">' +
+        (judged ? (ok ? "Got it!" : "Here it is") : "Fill in the missing letters") + "</p>" +
+      '<div class="row" style="justify-content:center;margin-bottom:14px">' +
+        '<button class="btn go sm" data-act="mlhear">🔊 Hear it</button>' +
+      "</div>" +
+      '<div class="slots">' +
+        w.text.split("").map(function(c, i){
+          if(ML.blanks.indexOf(i) < 0){
+            return '<div class="slot" style="border:0;background:none;color:var(--ink)">' + esc(c) + "</div>";
+          }
+          const t = ML.fill[i];
+          let cls = "slot" + (t ? " full" : "");
+          if(judged) cls = "slot full " + (t && t.ch.toLowerCase() === c.toLowerCase() ? "good" : "bad");
+          return '<div class="' + cls + '"' + (!judged && t ? ' data-mlout="' + i + '"' : "") + ">" +
+                 esc(judged ? c : (t ? t.ch : "")) + "</div>";
+        }).join("") +
+      "</div>" +
+      (judged
+        ? (ok ? '<p class="tiny" style="margin:0 0 12px">' + esc(w.sentence || "") + "</p>"
+              : '<p class="tiny" style="margin:0 0 12px">The word is <b>' + esc(w.text) + "</b>.</p>") +
+          '<button class="btn go wide big" data-act="mlnext">' +
+            (ML.i + 1 >= ML.pool.length ? "Finish" : "Next word →") + "</button>"
+        : '<div class="tiles">' +
+            ML.tiles.map(function(t){
+              return '<button class="tile' + (t.used ? " spent" : "") + '" data-mltile="' + t.id + '">' + esc(t.ch) + "</button>";
+            }).join("") +
+          "</div>" +
+          '<button class="btn go wide big" data-act="mlcheck" style="margin-top:16px"' +
+            (filled ? "" : " disabled") + ">Check it</button>") +
+    "</div>";
+
+  if(!judged && ML.blanks.every(function(i){ return !ML.fill[i]; })){
+    setTimeout(function(){ SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }, 220);
+  }
+}
+
+function mlPlace(id){
+  const t = ML.tiles.find(function(x){ return x.id === id; });
+  if(!t || t.used) return;
+  const slot = ML.blanks.find(function(i){ return !ML.fill[i]; });
+  if(slot === undefined) return;
+  t.used = true; ML.fill[slot] = t;
+  SFX.tick(); renderMissing();
+}
+function mlTake(i){
+  const t = ML.fill[i];
+  if(!t) return;
+  t.used = false; ML.fill[i] = null;
+  renderMissing();
+}
+function mlCheck(){
+  const w = ML.word;
+  const guess = w.text.split("").map(function(c, i){
+    return ML.blanks.indexOf(i) < 0 ? c : (ML.fill[i] ? ML.fill[i].ch : "");
+  }).join("");
+  ML.tries++;
+  if(sameWord(guess, w.text)){
+    ML.right++; ML.stars += (ML.tries === 1 ? 3 : 1); SFX.good();
+  }else SFX.soft();
+  ML.state = "judged";
+  renderMissing();
+}
+function mlNext(){
+  ML.i++;
+  if(ML.i >= ML.pool.length) ML.done = true;
+  else loadMissing();
+  renderMissing();
+}
+
+
+/* ==========================================================================
+   DAILY CHALLENGE - five words, once a day, unaided.
+   This one is real retrieval - audio only, typed from memory - so unlike the
+   tile games it counts towards the schedule, and carries its own streak.
+   ========================================================================== */
+let DC = null;
+
+function dailyDone(){ return DB.daily && DB.daily.date === today(); }
+function dailyStreak(){ return (DB.daily && DB.daily.streak) || 0; }
+
+function startDaily(){
+  if(dailyDone()){ alert("Today's challenge is already done. Come back tomorrow!"); return; }
+  const pool = practicePool();
+  if(pool.length < 3){ alert("Add this week's list first."); return; }
+  SPEAK.unlock(); SFX.unlock();
+  DC = {pool:shuffle(pool.slice()).slice(0, Math.min(5, pool.length)),
+        i:0, right:0, stars:0, phase:"ask", attempt:"", ops:null, done:false};
+  document.body.classList.add("playing");
+  RENDER.play = renderDaily;
+  go("play");
+}
+function endDaily(){
+  DC = null;
+  RENDER.play = playRenderer;
+  document.body.classList.remove("playing");
+  SPEAK.stop();
+  go("home");
+}
+
+function renderDaily(){
+  const v = el("v-play");
+  if(!DC) return;
+
+  if(DC.done){
+    if(!DC.closed){
+      DC.closed = true;
+      const y = addDays(today(), -1);
+      const prev = DB.daily || {};
+      DB.daily = {date:today(), streak:(prev.date === y ? (prev.streak || 0) + 1 : 1)};
+      addStars(DC.stars);
+      const bonus = DC.right === DC.pool.length ? 2 : 1;
+      DC.hatched = addGems(bonus); DC.bonus = bonus;
+      if(DB.daily.streak >= 5) DB.flags.daily5 = true;
+      save();
+      DC.badge = checkBadges()[0] || null;
+      chrome(); SFX.hatch();
+    }
+    v.innerHTML = '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 6px'>Challenge complete!</h2>" +
+      '<p class="muted">' + DC.right + " of " + DC.pool.length + " right.</p>" +
+      '<div class="stats" style="margin:12px 0">' +
+        '<div class="s"><b>+' + DC.stars + "</b><span>stars</span></div>" +
+        '<div class="s"><b>+' + DC.bonus + "</b><span>gems</span></div>" +
+        '<div class="s"><b>' + dailyStreak() + "</b><span>day challenge streak</span></div>" +
+      "</div>" +
+      (DC.badge ? '<div class="card flat" style="background:var(--gold-soft);border-color:transparent;margin:0 0 12px">' +
+        '<div style="font-size:34px">' + DC.badge.ic + "</div><b>Badge earned: " + esc(DC.badge.n) + "</b>" +
+        '<p class="tiny" style="margin:4px 0 0">' + esc(DC.badge.d) + "</p></div>" : "") +
+      '<p class="tiny" style="margin:0 0 12px">Come back tomorrow to keep the streak going.</p>' +
+      '<button class="btn go wide big" data-act="dcdone">Done</button>' +
+    "</div>";
+    return;
+  }
+
+  const w = DC.pool[DC.i];
+  const head = '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="dcdone" aria-label="Stop">✕</button>' +
+      '<div class="grow"><div class="bar"><i style="width:' + (DC.i / DC.pool.length * 100) + '%"></i></div></div>' +
+      '<span class="tiny">' + (DC.i + 1) + "/" + DC.pool.length + "</span>" +
+    "</div>";
+
+  if(DC.phase === "ask"){
+    v.innerHTML = head + '<div class="card">' +
+      '<p class="tiny center" style="margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">🎯 Daily Challenge</p>' +
+      '<div class="center" style="font-size:46px;margin:4px 0 8px">🎧</div>' +
+      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:12px">' +
+        '<button class="btn go sm" data-act="dchear">🔊 Hear it again</button>' +
+        '<button class="btn ghost sm" data-act="dcword">🔉 Just the word</button>' +
+      "</div>" +
+      (SPEAK.available() ? "" : '<div class="word lg" style="margin-bottom:12px">' + esc(w.text) + "</div>") +
+      '<input class="answer" id="ans" type="text" autocapitalize="off" autocomplete="off" ' +
+        'autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="type here">' +
+      '<button class="btn go wide big" data-act="dcsubmit" style="margin-top:12px">Check it</button>' +
+    "</div>";
+    const a = el("ans"); if(a) setTimeout(function(){ a.focus(); }, 60);
+    setTimeout(function(){ SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }, 250);
+    return;
+  }
+
+  const ok = sameWord(DC.attempt, w.text);
+  v.innerHTML = head + '<div class="card' + (ok ? " center pop" : "") + '">' +
+    '<div class="verdict ' + (ok ? "yes" : "no") + '">' + (ok ? "✓ Right!" : "Not this time") + "</div>" +
+    (ok ? "" : '<p class="tiny center" style="margin-bottom:2px">You wrote</p>' +
+               '<div class="word lg" style="margin-bottom:10px">' + renderAttempt(DC.ops) + "</div>" +
+               '<p class="tiny center" style="margin-bottom:2px">The word is</p>') +
+    '<div class="word xl" style="margin-bottom:10px">' + (ok ? esc(w.text) : renderTarget(DC.ops)) + "</div>" +
+    '<button class="btn go wide big" data-act="dcnext">' +
+      (DC.i + 1 >= DC.pool.length ? "Finish" : "Next →") + "</button>" +
+  "</div>";
+}
+
+function dcSubmit(){
+  const a = el("ans"); if(!a) return;
+  DC.attempt = a.value.trim();
+  if(!DC.attempt) return;
+  const w = DC.pool[DC.i];
+  const ok = sameWord(DC.attempt, w.text);
+  DC.ops = align(DC.attempt, w.text);
+  if(!ok) recordMisses(w, DC.ops);
+  gradeWord(w, ok, "recall");        /* unaided recall, so it counts */
+  if(ok){ DC.right++; DC.stars += 3; SFX.good(); } else SFX.soft();
+  DC.phase = "judge";
+  SPEAK.stop();
+  renderDaily();
+}
+function dcNext(){
+  DC.i++;
+  if(DC.i >= DC.pool.length) DC.done = true;
+  else { DC.phase = "ask"; DC.attempt = ""; DC.ops = null; }
+  renderDaily();
+}
+
+/* ==========================================================================
    SPRITES
    ========================================================================== */
 RENDER.sprites = function(){
@@ -3294,7 +3641,7 @@ function doRestore(file){
 
 /* --- one global click handler -------------------------------------------- */
 document.addEventListener("click", function(e){
-  const t = e.target.closest("[data-act],[data-go],[data-open],[data-mode],[data-drop],[data-del],[data-say],[data-gt],[data-cat],[data-sprite],[data-unheard],[data-tile],[data-unslot]");
+  const t = e.target.closest("[data-act],[data-go],[data-open],[data-mode],[data-drop],[data-del],[data-say],[data-gt],[data-cat],[data-sprite],[data-unheard],[data-tile],[data-unslot],[data-mltile],[data-mlout]");
   if(!t) return;
 
   /* sprite tip */
@@ -3311,6 +3658,8 @@ document.addEventListener("click", function(e){
   if(t.dataset.gt){ grownTab = t.dataset.gt; RENDER.grown(); return; }
   if(t.dataset.cat){ sortPick(t.dataset.cat); return; }
   if(t.dataset.tile != null){ scramPlace(+t.dataset.tile); return; }
+  if(t.dataset.mltile != null){ mlPlace(+t.dataset.mltile); return; }
+  if(t.dataset.mlout != null){ mlTake(+t.dataset.mlout); return; }
   if(t.dataset.unslot != null){ scramTake(+t.dataset.unslot); return; }
   if(t.dataset.unheard != null){ draft.heard.splice(+t.dataset.unheard, 1); renderAdd(); return; }
   if(t.dataset.drop != null){ collectReview(); draft.words.splice(+t.dataset.drop, 1); renderAdd(); return; }
@@ -3424,6 +3773,18 @@ document.addEventListener("click", function(e){
     case "sprint":   startSprint(); break;
     case "sort":     startSort(); break;
     case "scramble": startScramble(); break;
+    case "missing":  startMissing(); break;
+    case "mlcheck":  mlCheck(); break;
+    case "mlnext":   mlNext(); break;
+    case "mlhear":   if(ML) SPEAK.dictate(ML.word.text, ML.word.sentence, {rate:DB.profile.rate}); break;
+    case "mldone":   endMissing(); break;
+    case "mlagain":  startMissing(); break;
+    case "daily":    startDaily(); break;
+    case "dcsubmit": dcSubmit(); break;
+    case "dcnext":   dcNext(); break;
+    case "dchear":   if(DC) SPEAK.dictate(DC.pool[DC.i].text, DC.pool[DC.i].sentence, {rate:DB.profile.rate}); break;
+    case "dcword":   if(DC) SPEAK.say([DC.pool[DC.i].text], {rate:Math.max(0.6, DB.profile.rate - 0.12)}); break;
+    case "dcdone":   endDaily(); break;
     case "scramcheck": scramCheck(); break;
     case "scramnext":  scramNext(); break;
     case "scramclear": SC.slots.forEach(function(t){ if(t) t.used = false; });
@@ -3539,6 +3900,7 @@ document.addEventListener("keydown", function(e){
   const a = el("ans");
   if(!a || document.activeElement !== a) return;
   e.preventDefault();
+  if(DC) return dcSubmit();
   if(SP) return sprintSubmit();
   if(S && S.phase === "correct") return submitFix();
   if(S) return submitAnswer();
