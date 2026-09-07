@@ -150,13 +150,40 @@ Reviews expand across days: 1, 2, 4, 7, 14. **Past box 2 a word can only be
 promoted on a different day**, so mastery takes at least five separate sessions
 on separate days and cannot be manufactured in one long sitting.
 
-Two side games unlock as words get solid: **Speed Sprint** (60-second fluency
-round on words she already owns) and **Pattern Sort** (group words by the rule
-they follow).
+## Games, stars and badges
 
-Gems are awarded when a word actually becomes durable — one when it reaches box
-3, two more at mastery, one for finishing a session — and five gems hatch one of
-24 sprites. Rewards track real progress rather than time spent, on purpose.
+Three side games sit alongside practice:
+
+- **Word Scramble** — the letters of the word, mixed up as tiles, to be tapped
+  back into order. Three stars first try, one after a retry.
+- **Speed Sprint** — 60-second fluency round on words she already owns.
+- **Pattern Sort** — group words by the spelling rule they follow. Needs at
+  least two rules represented, so it declines a single-rule list.
+
+**Two currencies, deliberately separate.**
+
+**💎 Gems** come only from a word genuinely becoming durable — one when it
+reaches box 3, two more at mastery, one for finishing a session. Five gems hatch
+one of the 24 sprites, so the collection stays an honest picture of what she
+knows.
+
+**⭐ Stars** are the arcade layer: a star per word in practice, five more for a
+clean session, two per word in Speed Sprint, three per scramble. They buy
+nothing that pretends to be mastery.
+
+**🏅 Badges** mark milestones — First Word, Clean Sweep, Three Days, Whole Week,
+Five Mastered, Twenty Mastered, Unscrambler, Quick Fingers, Neat Writer, List
+Finished, Star Collector. Twelve in all, on a shelf under **Sprites**.
+
+**Scramble does not move a word along its Leitner box, on purpose.** Handing her
+the exact letter set and the word length makes it far easier than spelling from
+memory, and a week of scrambles would otherwise look like mastery it has not
+earned. It pays in stars instead. Speed Sprint *does* count, because that is
+unaided recall.
+
+A wrong arrangement is never left standing: the moment she checks, the slots
+turn green or red against the correct spelling and the real word is shown before
+she moves on.
 
 ## Handwriting
 

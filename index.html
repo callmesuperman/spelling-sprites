@@ -224,6 +224,35 @@ body.playing #tabs{display:none}
 .pop{animation:pop .34s cubic-bezier(.2,1.6,.4,1)}
 @keyframes pop{0%{transform:scale(.86)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
 
+/* --- letter tiles --- */
+.slots{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:0 0 16px;min-height:56px}
+.slot{
+  width:46px;height:56px;border-radius:11px;border:2.5px dashed var(--line);
+  display:flex;align-items:center;justify-content:center;background:#FDFCFF;
+  font-size:26px;font-weight:800;text-transform:lowercase;
+}
+.slot.full{border-style:solid;border-color:var(--violet);background:#fff;cursor:pointer}
+.slot.good{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.slot.bad{border-color:var(--coral);background:var(--coral-soft);color:var(--coral)}
+.tiles{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+.tile{
+  width:48px;height:56px;border-radius:12px;background:var(--violet);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;
+  box-shadow:0 3px 0 #4A24AE;text-transform:lowercase;
+}
+.tile:active{transform:translateY(2px);box-shadow:0 1px 0 #4A24AE}
+.tile.spent{opacity:.22;pointer-events:none;box-shadow:none}
+
+/* --- badges --- */
+.shelf{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.badge2{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:9px 4px;text-align:center;box-shadow:var(--shadow);
+}
+.badge2 .ic{font-size:26px;line-height:1.1;display:block}
+.badge2 .nm{font-size:10px;font-weight:800;margin-top:3px;line-height:1.2}
+.badge2.locked{opacity:.3;filter:grayscale(1)}
+
 /* --- sprite gallery --- */
 .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
 .sprite{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:9px 6px 8px;text-align:center;box-shadow:var(--shadow)}
@@ -281,6 +310,7 @@ body.playing #tabs{display:none}
     <h1 id="title">Spelling Sprites</h1>
     <span class="pill" id="p-streak" title="Days in a row">🔥 <b>0</b></span>
     <span class="pill" id="p-gems" title="Gems toward the next egg">💎 <b>0</b></span>
+    <span class="pill" id="p-stars" title="Stars from practice and games">⭐ <b>0</b></span>
   </header>
 
   <main>
@@ -1426,7 +1456,8 @@ function blank(){
     profile:{name:"Emily", sessionSize:8, newPerSession:3, rate:0.82, sound:true, big:false,
              hints:true, focusList:true, reviewOld:false, wholeList:false, write:"optional", reveal:"after"},
     lists:[], words:[], log:[], activeListId:"", paused:null,
-    gems:0, sprites:0, streak:0, lastPlayed:"", best:0
+    gems:0, sprites:0, streak:0, lastPlayed:"", best:0,
+    stars:0, badges:[], flags:{}
   };
 }
 let DB = blank();
@@ -1546,6 +1577,60 @@ function addGems(n){
 }
 function eggProgress(){ return DB.gems % GEMS_PER_EGG; }
 
+/* --- stars and badges ---------------------------------------------------- */
+/* Two currencies, on purpose. Gems only ever come from a word becoming durable,
+   so the sprite collection stays an honest picture of what she actually knows.
+   Stars are the arcade layer - effort and game performance - and they buy
+   nothing that pretends to be mastery. */
+function addStars(n){ DB.stars = (DB.stars || 0) + (n || 0); }
+
+const BADGES = [
+  {id:"first",   ic:"🌟", n:"First Word",   d:"Spell a word right",
+   t:function(){ return words().some(function(w){ return w.right > 0; }); }},
+  {id:"ten",     ic:"🔟", n:"Ten Right",    d:"Get 10 right in one session",
+   t:function(){ return !!DB.flags.ten; }},
+  {id:"clean",   ic:"✨", n:"Clean Sweep",  d:"Finish a session with no mistakes",
+   t:function(){ return !!DB.flags.clean; }},
+  {id:"streak3", ic:"🔥", n:"Three Days",   d:"Practise 3 days running",
+   t:function(){ return DB.streak >= 3; }},
+  {id:"streak7", ic:"🏕", n:"Whole Week",   d:"Practise 7 days running",
+   t:function(){ return DB.streak >= 7; }},
+  {id:"master5", ic:"🏅", n:"Five Mastered", d:"Master 5 words",
+   t:function(){ return words().filter(isMastered).length >= 5; }},
+  {id:"master20",ic:"🏆", n:"Twenty Mastered", d:"Master 20 words",
+   t:function(){ return words().filter(isMastered).length >= 20; }},
+  {id:"scram",   ic:"🔤", n:"Unscrambler",  d:"Win a whole Scramble round",
+   t:function(){ return !!DB.flags.scram; }},
+  {id:"sprint",  ic:"⚡️", n:"Quick Fingers", d:"Get 10 in one Speed Sprint",
+   t:function(){ return !!DB.flags.sprint10; }},
+  {id:"pen",     ic:"✍️", n:"Neat Writer",  d:"Write 20 words by hand",
+   t:function(){ return words().reduce(function(a, w){ return a + (w.wrote || 0); }, 0) >= 20; }},
+  {id:"list",    ic:"📗", n:"List Finished", d:"Master a whole list",
+   t:function(){
+     return DB.lists.some(function(l){
+       const ws = words().filter(function(w){ return w.listId === l.id; });
+       return ws.length >= 5 && ws.every(isMastered);
+     });
+   }},
+  {id:"stars",   ic:"💫", n:"Star Collector", d:"Earn 200 stars",
+   t:function(){ return (DB.stars || 0) >= 200; }}
+];
+
+/* Returns badges won just now, so each is celebrated exactly once. */
+function checkBadges(){
+  const won = [];
+  if(!DB.badges) DB.badges = [];
+  if(!DB.flags)  DB.flags = {};
+  BADGES.forEach(function(b){
+    if(DB.badges.indexOf(b.id) >= 0) return;
+    let ok = false;
+    try{ ok = b.t(); }catch(e){}
+    if(ok){ DB.badges.push(b.id); won.push(b); }
+  });
+  if(won.length) save();
+  return won;
+}
+
 /* --- streak --------------------------------------------------------------- */
 function touchStreak(){
   const t = today();
@@ -1637,6 +1722,7 @@ function chrome(){
   el("title").textContent = n ? n + "'s Sprites" : "Spelling Sprites";
   el("p-streak").innerHTML = "🔥 <b>" + DB.streak + "</b>";
   el("p-gems").innerHTML = "💎 <b>" + eggProgress() + "/" + GEMS_PER_EGG + "</b>";
+  el("p-stars").innerHTML = "⭐ <b>" + (DB.stars || 0) + "</b>";
   document.body.classList.toggle("big", !!DB.profile.big);
 }
 
@@ -1727,6 +1813,7 @@ RENDER.home = function(){
     "<h2>More games</h2>" +
     '<div class="card flat" style="padding:10px">' +
       '<button class="btn ghost wide" data-act="sprint" style="justify-content:flex-start;margin-bottom:8px">⚡️ Speed Sprint <span class="tiny" style="font-weight:600">— beat the clock on words you know</span></button>' +
+      '<button class="btn ghost wide" data-act="scramble" style="justify-content:flex-start;margin-bottom:8px">🔤 Word Scramble <span class="tiny" style="font-weight:600">— put the mixed-up letters back in order</span></button>' +
       '<button class="btn ghost wide" data-act="sort" style="justify-content:flex-start">🧩 Pattern Sort <span class="tiny" style="font-weight:600">— group words by their spelling rule</span></button>' +
     "</div>";
 };
@@ -2571,6 +2658,9 @@ function renderDone(v){
     S.closed = true;
     DB.paused = null;
     S.gems += 1;                                    /* finishing counts */
+    addStars(S.right + (S.wrong === 0 ? 5 : 0));    /* a star a word, bonus for a clean sweep */
+    if(S.right >= 10) DB.flags.ten = true;
+    if(S.wrong === 0 && S.right >= 4) DB.flags.clean = true;
     touchStreak();
     if(DB.streak > 0 && DB.streak % 7 === 0) S.gems += 3;
     S.hatched = addGems(S.gems);
@@ -2578,6 +2668,7 @@ function renderDone(v){
     DB.log.push({d:today(), n:total, right:S.right, sec:secs});
     if(DB.log.length > 400) DB.log = DB.log.slice(-400);
     save(); chrome();
+    S.badges = checkBadges();
     if(S.hatched) setTimeout(function(){ SFX.hatch(); }, 350);
   }
 
@@ -2600,6 +2691,11 @@ function renderDone(v){
         "</div>" :
         '<div class="bar teal" style="margin-bottom:6px"><i style="width:' + (eggProgress()/GEMS_PER_EGG*100) + '%"></i></div>' +
         '<p class="tiny" style="margin:0 0 12px">' + (GEMS_PER_EGG - eggProgress()) + " more gems until the next egg hatches</p>") +
+      (S.badges && S.badges.length ?
+        '<div class="card flat" style="background:var(--gold-soft);border-color:transparent;margin:0 0 12px">' +
+          '<div style="font-size:32px">' + S.badges[0].ic + "</div>" +
+          "<b>Badge earned: " + esc(S.badges[0].n) + "</b>" +
+          '<p class="tiny" style="margin:4px 0 0">' + esc(S.badges[0].d) + "</p></div>" : "") +
       '<button class="btn go wide big" data-act="done">Done</button>' +
       '<button class="btn ghost wide" data-act="again" style="margin-top:8px">Practise again</button>' +
     "</div>";
@@ -2640,11 +2736,17 @@ function renderSprint(){
   if(!SP) return;
   if(SP.over){
     const gained = Math.floor(SP.right / 4);
-    if(!SP.closed){ SP.closed = true; if(gained){ addGems(gained); save(); chrome(); } }
+    if(!SP.closed){
+      SP.closed = true;
+      addStars(SP.right * 2);
+      if(SP.right >= 10) DB.flags.sprint10 = true;
+      if(gained) addGems(gained);
+      save(); checkBadges(); chrome();
+    }
     v.innerHTML = '<div class="card center pop">' +
       "<h2 style='margin:2px 0 6px'>Time!</h2>" +
       "<p class='muted'>" + plural(SP.right, "word") + " spelled correctly in 60 seconds.</p>" +
-      (gained ? "<p class='tiny'>+" + gained + " gems</p>" : "") +
+      "<p class='tiny'>+" + (SP.right * 2) + " stars" + (gained ? " · +" + gained + " gems" : "") + "</p>" +
       '<button class="btn go wide big" data-act="sprintdone" style="margin-top:10px">Done</button>' +
     "</div>";
     return;
@@ -2720,7 +2822,12 @@ function renderSort(){
   if(!SO) return;
   if(SO.i >= SO.cards.length){
     const gained = SO.right >= SO.cards.length - 1 ? 1 : 0;
-    if(!SO.closed){ SO.closed = true; if(gained){ addGems(gained); save(); chrome(); } }
+    if(!SO.closed){
+      SO.closed = true;
+      addStars(SO.right);
+      if(gained) addGems(gained);
+      save(); checkBadges(); chrome();
+    }
     v.innerHTML = '<div class="card center pop">' +
       "<h2 style='margin:2px 0 6px'>Sorted!</h2>" +
       "<p class='muted'>" + SO.right + " of " + SO.cards.length + " in the right group.</p>" +
@@ -2758,6 +2865,170 @@ function sortPick(pid){
 const playRenderer = RENDER.play;
 
 /* ==========================================================================
+   WORD SCRAMBLE - the letters of the word, shuffled, to be put back in order.
+   The letter set and the length are both given away, so this is far easier
+   than spelling from memory: it earns stars but deliberately does NOT move a
+   word along its Leitner box, or a week of scrambles would look like mastery.
+   A wrong arrangement is never left standing - it is corrected on the spot.
+   ========================================================================== */
+let SC = null;
+
+function scrambleLetters(word){
+  const src = word.split("");
+  for(let tries = 0; tries < 30; tries++){
+    const mix = shuffle(src.slice());
+    if(mix.join("").toLowerCase() !== word.toLowerCase()) return mix;
+  }
+  return src.reverse();
+}
+
+function startScramble(){
+  const pool = practicePool().filter(function(w){ return w.text.length >= 3; });
+  if(pool.length < 3){
+    alert("Scramble needs at least three words on the list. Add this week's list and try again.");
+    return;
+  }
+  SPEAK.unlock(); SFX.unlock();
+  SC = {pool:shuffle(pool.slice()).slice(0, 8), i:0, right:0, stars:0, done:false};
+  loadScramble();
+  document.body.classList.add("playing");
+  RENDER.play = renderScramble;
+  go("play");
+}
+function loadScramble(){
+  const w = SC.pool[SC.i];
+  SC.word = w;
+  SC.tiles = scrambleLetters(w.text).map(function(ch, i){ return {ch:ch, id:i, used:false}; });
+  SC.slots = new Array(w.text.length).fill(null);
+  SC.state = "build";      /* build -> judged */
+  SC.tries = 0;
+}
+function endScramble(){
+  SC = null;
+  RENDER.play = playRenderer;
+  document.body.classList.remove("playing");
+  SPEAK.stop();
+  go("home");
+}
+
+function renderScramble(){
+  const v = el("v-play");
+  if(!SC) return;
+
+  if(SC.done){
+    if(!SC.closed){
+      SC.closed = true;
+      addStars(SC.stars);
+      if(SC.right === SC.pool.length) DB.flags.scram = true;
+      save();
+      const won = checkBadges();
+      SC.badge = won[0] || null;
+      chrome();
+      SFX.hatch();
+    }
+    v.innerHTML = '<div class="card center pop">' +
+      "<h2 style='margin:2px 0 6px'>Scramble done!</h2>" +
+      '<p class="muted">' + SC.right + " of " + SC.pool.length + " unscrambled.</p>" +
+      '<div class="stats" style="margin:12px 0">' +
+        '<div class="s"><b>+' + SC.stars + "</b><span>stars</span></div>" +
+        '<div class="s"><b>' + SC.right + "</b><span>right</span></div>" +
+        '<div class="s"><b>' + (DB.stars || 0) + "</b><span>stars total</span></div>" +
+      "</div>" +
+      (SC.badge ? '<div class="card flat" style="background:var(--gold-soft);border-color:transparent;margin:0 0 12px">' +
+        '<div style="font-size:34px">' + SC.badge.ic + "</div>" +
+        "<b>Badge earned: " + esc(SC.badge.n) + "</b>" +
+        '<p class="tiny" style="margin:4px 0 0">' + esc(SC.badge.d) + "</p></div>" : "") +
+      '<button class="btn go wide big" data-act="scramdone">Done</button>' +
+      '<button class="btn ghost wide" data-act="scramagain" style="margin-top:8px">Play again</button>' +
+    "</div>";
+    return;
+  }
+
+  const w = SC.word;
+  const filled = SC.slots.every(function(x){ return x !== null; });
+  const judged = SC.state === "judged";
+  const guess = SC.slots.map(function(t){ return t === null ? "" : t.ch; }).join("");
+  const ok = judged && sameWord(guess, w.text);
+
+  v.innerHTML =
+    '<div class="row" style="margin:6px 0 14px">' +
+      '<button class="iconbtn" data-act="scramdone" aria-label="Stop">✕</button>' +
+      '<div class="grow"><div class="bar"><i style="width:' + (SC.i / SC.pool.length * 100) + '%"></i></div></div>' +
+      '<span class="tiny">⭐ ' + SC.stars + "</span>" +
+    "</div>" +
+    '<div class="card center">' +
+      '<p class="tiny" style="margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800">' +
+        (judged ? (ok ? "Got it!" : "Here it is") : "Put the letters in order") + "</p>" +
+      '<div class="row" style="justify-content:center;gap:8px;margin-bottom:14px">' +
+        '<button class="btn go sm" data-act="scramhear">🔊 Hear it</button>' +
+        (!judged ? '<button class="btn ghost sm" data-act="scramclear">Clear</button>' : "") +
+      "</div>" +
+      '<div class="slots">' +
+        SC.slots.map(function(t, i){
+          const ch = t === null ? "" : t.ch;
+          let cls = "slot" + (t !== null ? " full" : "");
+          if(judged) cls = "slot full " + (w.text[i].toLowerCase() === (ch || "").toLowerCase() ? "good" : "bad");
+          return '<div class="' + cls + '"' + (!judged && t !== null ? ' data-unslot="' + i + '"' : "") + ">" +
+                 esc(judged ? w.text[i] : ch) + "</div>";
+        }).join("") +
+      "</div>" +
+      (judged
+        ? (ok ? '<p class="tiny" style="margin:0 0 12px">' + esc(w.sentence || "") + "</p>"
+              : '<p class="tiny" style="margin:0 0 12px">You had <b>' + esc(guess) + "</b>. The word is <b>" + esc(w.text) + "</b>.</p>") +
+          '<button class="btn go wide big" data-act="scramnext">' +
+            (SC.i + 1 >= SC.pool.length ? "Finish" : "Next word →") + "</button>"
+        : '<div class="tiles">' +
+            SC.tiles.map(function(t){
+              return '<button class="tile' + (t.used ? " spent" : "") + '" data-tile="' + t.id + '">' + esc(t.ch) + "</button>";
+            }).join("") +
+          "</div>" +
+          '<button class="btn go wide big" data-act="scramcheck" style="margin-top:16px"' +
+            (filled ? "" : " disabled") + ">Check it</button>") +
+    "</div>";
+
+  if(!judged && SC.slots.every(function(x){ return x === null; })){
+    setTimeout(function(){ SPEAK.dictate(w.text, w.sentence, {rate:DB.profile.rate}); }, 220);
+  }
+}
+
+function scramPlace(id){
+  const t = SC.tiles.find(function(x){ return x.id === id; });
+  if(!t || t.used) return;
+  const slot = SC.slots.indexOf(null);
+  if(slot < 0) return;
+  t.used = true; SC.slots[slot] = t;
+  SFX.tick();
+  renderScramble();
+}
+function scramTake(i){
+  const t = SC.slots[i];
+  if(!t) return;
+  t.used = false; SC.slots[i] = null;
+  renderScramble();
+}
+function scramCheck(){
+  const w = SC.word;
+  const guess = SC.slots.map(function(t){ return t ? t.ch : ""; }).join("");
+  SC.tries++;
+  if(sameWord(guess, w.text)){
+    SC.right++;
+    const gain = SC.tries === 1 ? 3 : 1;
+    SC.stars += gain;
+    SFX.good();
+  }else{
+    SFX.soft();
+  }
+  SC.state = "judged";      /* the correct spelling is shown either way */
+  renderScramble();
+}
+function scramNext(){
+  SC.i++;
+  if(SC.i >= SC.pool.length){ SC.done = true; }
+  else loadScramble();
+  renderScramble();
+}
+
+/* ==========================================================================
    SPRITES
    ========================================================================== */
 RENDER.sprites = function(){
@@ -2781,6 +3052,22 @@ RENDER.sprites = function(){
   }
   h += "</div>" +
        '<div id="sprite-tip" class="note" style="margin-top:14px;display:none"></div>';
+
+  h += '<div class="row spread" style="margin:24px 0 4px">' +
+         "<h2 style='margin:0'>Badges</h2>" +
+         '<span class="pill">⭐ <b>' + (DB.stars || 0) + "</b> stars</span>" +
+       "</div>" +
+       '<p class="muted" style="margin:0 0 12px">' + DB.badges.length + " of " + BADGES.length + " earned.</p>" +
+       '<div class="shelf">' +
+         BADGES.map(function(b){
+           const got = DB.badges.indexOf(b.id) >= 0;
+           return '<div class="badge2' + (got ? "" : " locked") + '" title="' + esc(b.d) + '">' +
+                    '<span class="ic">' + b.ic + "</span>" +
+                    '<div class="nm">' + esc(got ? b.n : "???") + "</div>" +
+                  "</div>";
+         }).join("") +
+       "</div>" +
+       '<p class="tiny" style="margin:10px 0 0">Stars come from practice and games. Gems only come from words that have really stuck — that is what hatches sprites.</p>';
   v.innerHTML = h;
 };
 
@@ -3007,7 +3294,7 @@ function doRestore(file){
 
 /* --- one global click handler -------------------------------------------- */
 document.addEventListener("click", function(e){
-  const t = e.target.closest("[data-act],[data-go],[data-open],[data-mode],[data-drop],[data-del],[data-say],[data-gt],[data-cat],[data-sprite],[data-unheard]");
+  const t = e.target.closest("[data-act],[data-go],[data-open],[data-mode],[data-drop],[data-del],[data-say],[data-gt],[data-cat],[data-sprite],[data-unheard],[data-tile],[data-unslot]");
   if(!t) return;
 
   /* sprite tip */
@@ -3023,6 +3310,8 @@ document.addEventListener("click", function(e){
   if(t.dataset.mode){ if(t.dataset.mode !== "speak") HEAR.stop(); draft.mode = t.dataset.mode; draft.msg = ""; renderAdd(); return; }
   if(t.dataset.gt){ grownTab = t.dataset.gt; RENDER.grown(); return; }
   if(t.dataset.cat){ sortPick(t.dataset.cat); return; }
+  if(t.dataset.tile != null){ scramPlace(+t.dataset.tile); return; }
+  if(t.dataset.unslot != null){ scramTake(+t.dataset.unslot); return; }
   if(t.dataset.unheard != null){ draft.heard.splice(+t.dataset.unheard, 1); renderAdd(); return; }
   if(t.dataset.drop != null){ collectReview(); draft.words.splice(+t.dataset.drop, 1); renderAdd(); return; }
   if(t.dataset.say){
@@ -3134,6 +3423,15 @@ document.addEventListener("click", function(e){
       break;
     case "sprint":   startSprint(); break;
     case "sort":     startSort(); break;
+    case "scramble": startScramble(); break;
+    case "scramcheck": scramCheck(); break;
+    case "scramnext":  scramNext(); break;
+    case "scramclear": SC.slots.forEach(function(t){ if(t) t.used = false; });
+                       SC.slots = SC.slots.map(function(){ return null; });
+                       renderScramble(); break;
+    case "scramhear":  if(SC) SPEAK.dictate(SC.word.text, SC.word.sentence, {rate:DB.profile.rate}); break;
+    case "scramdone":  endScramble(); break;
+    case "scramagain": startScramble(); break;
     case "quit":     if(S){ unmountPad(); S.phase = "pause"; RENDER.play(); } break;
     case "keepgoing": S.phase = (S.i < S.items.length) ? "ask" : "pause"; RENDER.play(); break;
     case "stopnow":  pauseSession(); endSession(); break;
